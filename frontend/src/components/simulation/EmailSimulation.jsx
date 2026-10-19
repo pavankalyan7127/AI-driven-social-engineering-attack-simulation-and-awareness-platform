@@ -1,0 +1,1769 @@
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  Mail,
+  MessageSquare,
+  Video,
+  Pen,
+  Inbox,
+  Star,
+  Clock,
+  Send,
+  FileText,
+  Tag,
+  ShoppingBag,
+  ChevronDown,
+  ChevronRight,
+  Plus,
+  Menu,
+  Search,
+  SlidersHorizontal,
+  HelpCircle,
+  Settings,
+  Grid,
+  ArrowLeft,
+  Archive,
+  AlertOctagon,
+  Trash2,
+  MailCheck,
+  CheckCircle2,
+  FolderInput,
+  MoreVertical,
+  ChevronLeft,
+  Paperclip,
+  Printer,
+  ExternalLink,
+  CornerUpLeft,
+  CornerUpRight,
+  Smile,
+  X,
+  AlertTriangle,
+  FileIcon,
+  Download,
+  Eye,
+  Check,
+  RotateCcw,
+  ShieldCheck,
+  ShieldAlert,
+  Info,
+  Maximize2,
+  Minimize2
+} from 'lucide-react';
+
+/**
+ * EmailSimulation Component
+ * 
+ * Reusable simulation module for AI-driven social engineering attack training.
+ * Provides a high-fidelity, data-driven, isolated email environment.
+ * 
+ * @param {Object} props
+ * @param {Object} props.scenario - Validated scenario JSON
+ * @param {string} props.sessionId - Current simulation session ID
+ * @param {Function} props.onAction - Reports user interaction events
+ * @param {Function} props.onComplete - Notifies parent of terminal state
+ */
+export default function EmailSimulation({
+  scenario,
+  sessionId = 'sess-sim-default',
+  onAction,
+  onComplete
+}) {
+  // Graceful fallback if scenario is missing
+  if (!scenario || typeof scenario !== 'object') {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[400px] p-6 bg-gray-50 text-gray-700">
+        <div className="text-center p-8 bg-white border border-gray-200 rounded-xl shadow-sm max-w-md">
+          <AlertOctagon className="w-12 h-12 text-red-500 mx-auto mb-3" />
+          <h2 className="text-lg font-semibold mb-2">Scenario Unavailable</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            No valid email attack scenario data was provided to the simulation runner.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Session & Scenario IDs
+  const scenarioId = scenario.scenarioId || scenario.id || 'unnamed-scenario';
+  const targetId = scenario.targetId || scenario.emailData?.id || 'target-email';
+
+  // Primary navigation view: 'inbox' | 'email'
+  const [currentView, setCurrentView] = useState(scenario.initialView === 'email' ? 'email' : 'inbox');
+
+  // Search filter query
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Selected emails by ID for bulk operations
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // Starred email IDs (local state merged with scenario data)
+  const [starredIds, setStarredIds] = useState(() => {
+    const set = new Set();
+    if (scenario.emailData?.isStarred) set.add(scenario.emailData.id);
+    (scenario.inboxMessages || []).forEach(msg => {
+      if (msg.isStarred) set.add(msg.id);
+    });
+    return set;
+  });
+
+  // Track read/unread states locally
+  const [readIds, setReadIds] = useState(() => {
+    const set = new Set();
+    if (scenario.emailData && !scenario.emailData.isUnread) set.add(scenario.emailData.id);
+    (scenario.inboxMessages || []).forEach(msg => {
+      if (!msg.isUnread) set.add(msg.id);
+    });
+    return set;
+  });
+
+  // Combine scenario.emailData with companion inbox messages into a unified list
+  const initialMessages = useMemo(() => {
+    const list = [];
+    const targetEmail = scenario.emailData;
+
+    if (scenario.inboxMessages && Array.isArray(scenario.inboxMessages)) {
+      scenario.inboxMessages.forEach(msg => {
+        // If message is target or has targetId, merge full target details
+        if (msg.isTarget || msg.id === targetId || (targetEmail && msg.id === targetEmail.id)) {
+          list.push({ ...targetEmail, ...msg, isTarget: true });
+        } else {
+          list.push(msg);
+        }
+      });
+    }
+
+    // Ensure the target phishing email is present in the list
+    if (targetEmail && !list.some(m => m.id === targetEmail.id || m.isTarget)) {
+      list.unshift({ ...targetEmail, isTarget: true });
+    }
+
+    return list;
+  }, [scenario]);
+
+  const [inboxList, setInboxList] = useState(initialMessages);
+
+  // Active email in View B (default to target phishing email or first message)
+  const [activeEmail, setActiveEmail] = useState(() => {
+    if (scenario.emailData) return scenario.emailData;
+    return initialMessages.find(m => m.isTarget) || initialMessages[0] || null;
+  });
+
+  // Security routing details dropdown ("to me ▾")
+  const [showSecurityDetails, setShowSecurityDetails] = useState(false);
+
+  // Threat Reporting Modal State
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportIndicators, setReportIndicators] = useState({
+    suspiciousSender: false,
+    urgentActionThreat: false,
+    credentialHarvestLink: false,
+    anomalousHeader: false,
+    genericGreeting: false,
+  });
+  const [reportNotes, setReportNotes] = useState('');
+  const [threatReportedConfirmed, setThreatReportedConfirmed] = useState(false);
+
+  // Reply Composer State
+  const [isReplying, setIsReplying] = useState(false);
+  const [replyText, setReplyText] = useState('');
+  const [replySuccessMessage, setReplySuccessMessage] = useState(null);
+
+  // Compose Modal State (Floating New Message window)
+  const [isComposeOpen, setIsComposeOpen] = useState(false);
+  const [composeTo, setComposeTo] = useState('');
+  const [composeSubject, setComposeSubject] = useState('');
+  const [composeBody, setComposeBody] = useState('');
+  const [composeStatus, setComposeStatus] = useState(null);
+
+  // Simulated link clicked notice banner
+  const [linkNotice, setLinkNotice] = useState(null);
+
+  // Mobile sidebar drawer open/close
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Simulation completed overlay state
+  const [isTerminal, setIsTerminal] = useState(Boolean(scenario.isTerminal));
+
+  // Single scenario_viewed event tracker to prevent duplicate emissions on rerender
+  const hasEmittedViewed = useRef(false);
+
+  // Safe Event Dispatcher
+  const emitEvent = (eventType, metadata = {}) => {
+    const payload = {
+      eventType,
+      scenarioId,
+      sessionId,
+      targetId: activeEmail?.id || targetId,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        channel: 'email',
+        currentView,
+        ...metadata
+      }
+    };
+
+    if (typeof onAction === 'function') {
+      try {
+        onAction(payload);
+      } catch (err) {
+        console.error('Error invoking onAction callback:', err);
+      }
+    }
+    return payload;
+  };
+
+  // Emit scenario_viewed once on mount
+  useEffect(() => {
+    if (!hasEmittedViewed.current) {
+      hasEmittedViewed.current = true;
+      emitEvent('scenario_viewed', {
+        scenarioTitle: scenario.title || 'Email Social Engineering Simulation',
+        category: scenario.category || 'Phishing',
+        difficulty: scenario.difficulty || 'Medium',
+        totalInboxCount: inboxList.length,
+        initialView: currentView
+      });
+    }
+  }, [scenarioId, sessionId]);
+
+  // Handle open email from list
+  const handleOpenEmail = (email) => {
+    setActiveEmail(email);
+    setCurrentView('email');
+    setShowSecurityDetails(false);
+    setIsReplying(false);
+    setLinkNotice(null);
+
+    // Mark as read locally
+    setReadIds(prev => new Set(prev).add(email.id));
+
+    emitEvent('message_opened', {
+      emailId: email.id,
+      subject: email.subject,
+      senderName: email.sender?.name,
+      senderEmail: email.sender?.email,
+      isTargetPhish: Boolean(email.isTarget || email.id === targetId)
+    });
+  };
+
+  // Handle back to inbox
+  const handleBackToInbox = () => {
+    setCurrentView('inbox');
+    setLinkNotice(null);
+    setIsReplying(false);
+  };
+
+  // Toggle star
+  const handleToggleStar = (emailId, e) => {
+    if (e) e.stopPropagation();
+    setStarredIds(prev => {
+      const next = new Set(prev);
+      const isStarred = next.has(emailId);
+      if (isStarred) {
+        next.delete(emailId);
+      } else {
+        next.add(emailId);
+      }
+      emitEvent(isStarred ? 'message_unstarred' : 'message_starred', {
+        emailId,
+        isStarred: !isStarred
+      });
+      return next;
+    });
+  };
+
+  // Toggle row selection
+  const handleToggleSelect = (emailId, e) => {
+    if (e) e.stopPropagation();
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(emailId)) {
+        next.delete(emailId);
+      } else {
+        next.add(emailId);
+      }
+      return next;
+    });
+  };
+
+  // Select all or none
+  const handleSelectAllToggle = () => {
+    if (selectedIds.size === filteredMessages.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredMessages.map(m => m.id)));
+    }
+  };
+
+  // Handle simulated link / button activation
+  const handleSimulatedAction = (e, actionMeta) => {
+    if (e) e.preventDefault();
+
+    emitEvent('simulated_link_clicked', {
+      actionId: actionMeta.id || actionMeta.actionId || 'link_action',
+      url: actionMeta.url || '#',
+      label: actionMeta.text || actionMeta.label || 'Action Link',
+      targetPhish: true
+    });
+
+    setLinkNotice({
+      url: actionMeta.url || 'https://vtop-auth-verify.portal',
+      text: actionMeta.text || 'Action Clicked'
+    });
+  };
+
+  // Submit threat report
+  const handleConfirmReport = () => {
+    const selectedCount = Object.values(reportIndicators).filter(Boolean).length;
+    emitEvent('threat_reported', {
+      emailId: activeEmail?.id || targetId,
+      indicators: reportIndicators,
+      indicatorCount: selectedCount,
+      notes: reportNotes,
+      reportedTarget: activeEmail?.isTarget || activeEmail?.id === targetId
+    });
+
+    setIsReportModalOpen(false);
+    setThreatReportedConfirmed(true);
+
+    if (typeof onComplete === 'function') {
+      onComplete({
+        status: 'reported',
+        action: 'threat_reported',
+        scenarioId,
+        sessionId,
+        indicatorsIdentified: reportIndicators
+      });
+    }
+  };
+
+  // Send simulated reply
+  const handleSendReply = (e) => {
+    if (e) e.preventDefault();
+    if (!replyText.trim()) return;
+
+    emitEvent('reply_sent', {
+      recipient: activeEmail?.sender?.email || activeEmail?.sender?.name,
+      replyContent: replyText.trim(),
+      simulated: true
+    });
+
+    setReplySuccessMessage('Simulated reply recorded. No real email was sent.');
+    setReplyText('');
+    setIsReplying(false);
+
+    setTimeout(() => {
+      setReplySuccessMessage(null);
+    }, 4500);
+  };
+
+  // Send simulated compose
+  const handleSendCompose = (e) => {
+    if (e) e.preventDefault();
+    emitEvent('reply_sent', {
+      recipient: composeTo,
+      subject: composeSubject,
+      body: composeBody,
+      type: 'new_compose_message'
+    });
+
+    setComposeStatus('Simulated email dispatched to sandbox.');
+    setTimeout(() => {
+      setIsComposeOpen(false);
+      setComposeStatus(null);
+      setComposeTo('');
+      setComposeSubject('');
+      setComposeBody('');
+    }, 1500);
+  };
+
+  // Filter messages based on search query
+  const filteredMessages = useMemo(() => {
+    if (!searchQuery.trim()) return inboxList;
+    const q = searchQuery.toLowerCase();
+    return inboxList.filter(msg => {
+      const sender = (msg.sender?.name || '').toLowerCase();
+      const subject = (msg.subject || '').toLowerCase();
+      const preview = (msg.preview || '').toLowerCase();
+      return sender.includes(q) || subject.includes(q) || preview.includes(q);
+    });
+  }, [inboxList, searchQuery]);
+
+  // Profile data
+  const userProfile = scenario.userProfile || {
+    name: 'Pavan Kalyan',
+    email: 'pavankalyan.k2023a@vitstudent.ac.in',
+    avatar: 'P',
+    institution: 'VIT',
+    unreadCount: 2684
+  };
+
+  return (
+    <div className="flex flex-col h-screen w-full bg-[#f6f8fc] text-[#1f1f1f] select-none overflow-hidden font-sans antialiased">
+      {/* ============================================================== */}
+      {/* 1. TOP HEADER (Gmail-inspired exact hierarchy) */}
+      {/* ============================================================== */}
+      <header className="h-16 flex items-center justify-between px-4 shrink-0 bg-[#f6f8fc] border-b border-transparent">
+        {/* Left: Hamburger + Gmail Logo */}
+        <div className="flex items-center gap-3 w-64 min-w-[200px]">
+          <button
+            onClick={() => setMobileMenuOpen(prev => !prev)}
+            aria-label="Main menu"
+            className="p-2.5 rounded-full hover:bg-black/5 active:bg-black/10 text-[#444746] transition-colors focus:outline-none"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          <div
+            onClick={handleBackToInbox}
+            className="flex items-center gap-2 cursor-pointer select-none"
+            title="Gmail Simulation"
+          >
+            {/* Google's signature multi-color M */}
+            <svg className="w-8 h-8" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M1.5 6.5v12a2 2 0 0 0 2 2h3.5v-10l5 4 5-4v10H20.5a2 2 0 0 0 2-2v-12l-10.5 7.5L1.5 6.5z"/>
+              <path fill="#34A853" d="M17 10.5v10h3.5a2 2 0 0 0 2-2v-12l-5.5 4z"/>
+              <path fill="#EA4335" d="M1.5 6.5l10.5 7.5 10.5-7.5-1.5-2.5a2 2 0 0 0-2-1H5a2 2 0 0 0-2 1l-1.5 2.5z"/>
+              <path fill="#FBBC05" d="M1.5 6.5l5.5 4v-10H3.5a2 2 0 0 0-2 2v4z"/>
+            </svg>
+            <span className="text-[22px] font-normal text-[#444746] tracking-tight -mt-0.5">
+              Gmail
+            </span>
+          </div>
+        </div>
+
+        {/* Center: Search Field */}
+        <div className="flex-1 max-w-[720px] px-2">
+          <div className="relative flex items-center bg-[#eaf1fb] hover:bg-[#e1e9f5] focus-within:bg-white focus-within:shadow-md focus-within:ring-1 focus-within:ring-gray-200 rounded-full px-4 py-2 transition-all duration-200">
+            <button aria-label="Search" className="text-[#444746] mr-3 focus:outline-none">
+              <Search className="w-5 h-5" />
+            </button>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search mail"
+              className="w-full bg-transparent border-none outline-none text-sm text-[#1f1f1f] placeholder-[#444746]"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="p-1 hover:bg-black/5 rounded-full text-[#444746] mr-1"
+                aria-label="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              aria-label="Search options"
+              className="p-1.5 hover:bg-black/5 rounded-full text-[#444746] transition-colors"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Right: Status Pill, Help, Settings, Grid, Profile Avatar */}
+        <div className="flex items-center gap-1 min-w-[280px] justify-end">
+          {/* Active Status Indicator */}
+          <div className="hidden sm:flex items-center px-3 py-1.5 rounded-full hover:bg-black/5 text-[#444746] text-xs font-medium cursor-pointer border border-transparent mr-1">
+            <span className="w-2.5 h-2.5 bg-[#1e8e3e] rounded-full mr-2"></span>
+            <span>Active</span>
+            <ChevronDown className="w-3.5 h-3.5 ml-1 text-[#444746]" />
+          </div>
+
+          <button aria-label="Support & Help" className="p-2.5 rounded-full hover:bg-black/5 text-[#444746]">
+            <HelpCircle className="w-5 h-5" />
+          </button>
+          <button aria-label="Settings" className="p-2.5 rounded-full hover:bg-black/5 text-[#444746]">
+            <Settings className="w-5 h-5" />
+          </button>
+          <button aria-label="Google apps" className="p-2.5 rounded-full hover:bg-black/5 text-[#444746]">
+            <Grid className="w-5 h-5" />
+          </button>
+
+          {/* Profile Badge (matching Screenshot 1: Pill with VIT institution and letter avatar) */}
+          <div className="flex items-center border border-gray-300 rounded-full pl-3 pr-1 py-1 gap-2 bg-white hover:shadow-sm cursor-pointer ml-1">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-[#001d35] tracking-tight">
+                {userProfile.institution || 'VIT'}
+              </span>
+            </div>
+            <div className="w-7 h-7 rounded-full bg-[#5c3e38] text-white flex items-center justify-center text-xs font-semibold">
+              {userProfile.avatar || userProfile.name?.charAt(0) || 'P'}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* ============================================================== */}
+      {/* 2. BODY LAYOUT (Left Rail, Sidebar, Main Message Panel, Right Rail) */}
+      {/* ============================================================== */}
+      <div className="flex flex-1 overflow-hidden pb-3 pr-2 gap-1">
+        {/* Rail: Narrow Left Navigation (Mail, Chat, Meet) */}
+        <nav
+          aria-label="Application Rail"
+          className="w-16 shrink-0 flex flex-col items-center py-2 gap-4 bg-[#f6f8fc] select-none"
+        >
+          {/* Mail tab (Active) */}
+          <button
+            onClick={() => setCurrentView('inbox')}
+            className="flex flex-col items-center group focus:outline-none"
+          >
+            <div className="relative w-12 h-8 rounded-full bg-[#c2e7ff] text-[#001d35] flex items-center justify-center transition-all">
+              <Mail className="w-5 h-5" />
+              <span className="absolute -top-1.5 -right-1 bg-[#b3261e] text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full leading-tight shadow-xs">
+                99+
+              </span>
+            </div>
+            <span className="text-xs font-semibold text-[#001d35] mt-1">Mail</span>
+          </button>
+
+          {/* Chat tab */}
+          <button
+            onClick={() => emitEvent('chat_rail_clicked', { notice: 'Simulated external tab' })}
+            className="flex flex-col items-center group focus:outline-none text-[#444746] hover:text-[#1f1f1f]"
+          >
+            <div className="w-12 h-8 rounded-full hover:bg-black/5 flex items-center justify-center transition-all">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-medium mt-1">Chat</span>
+          </button>
+
+          {/* Meet tab */}
+          <button
+            onClick={() => emitEvent('meet_rail_clicked', { notice: 'Simulated external tab' })}
+            className="flex flex-col items-center group focus:outline-none text-[#444746] hover:text-[#1f1f1f]"
+          >
+            <div className="w-12 h-8 rounded-full hover:bg-black/5 flex items-center justify-center transition-all">
+              <Video className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-medium mt-1">Meet</span>
+          </button>
+        </nav>
+
+        {/* Sidebar: Compose & Folder Navigation */}
+        <aside
+          aria-label="Mail Folders"
+          className={`${
+            mobileMenuOpen ? 'fixed inset-y-0 left-0 z-40 bg-white w-64 shadow-2xl p-4' : 'hidden md:flex'
+          } w-60 shrink-0 flex-col py-2 px-3 overflow-y-auto bg-[#f6f8fc] select-none`}
+        >
+          {/* Mobile close button */}
+          {mobileMenuOpen && (
+            <div className="flex justify-between items-center mb-4 md:hidden">
+              <span className="font-semibold text-gray-700">Navigation</span>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-1 rounded-full hover:bg-gray-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          )}
+
+          {/* Compose Button */}
+          <button
+            onClick={() => setIsComposeOpen(true)}
+            className="flex items-center gap-3.5 bg-[#c2e7ff] hover:bg-[#b3dbf5] text-[#001d35] px-5 py-4 rounded-2xl font-medium text-sm shadow-sm hover:shadow transition-all mb-4 w-fit active:scale-95"
+          >
+            <Pen className="w-5 h-5" />
+            <span>Compose</span>
+          </button>
+
+          {/* Folder List */}
+          <div className="space-y-0.5 text-sm font-medium text-[#444746]">
+            {/* Inbox Item */}
+            <button
+              onClick={() => {
+                setCurrentView('inbox');
+                if (mobileMenuOpen) setMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center justify-between px-4 py-1.5 rounded-r-full -ml-3 transition-colors ${
+                currentView === 'inbox'
+                  ? 'bg-[#d3e3fd] text-[#041e49] font-bold'
+                  : 'hover:bg-black/5 text-[#444746]'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <Inbox className="w-4 h-4 text-[#041e49]" />
+                <span>Inbox</span>
+              </div>
+              <span className="text-xs font-bold text-[#041e49]">
+                {userProfile.unreadCount ? userProfile.unreadCount.toLocaleString() : '2,684'}
+              </span>
+            </button>
+
+            {/* Starred */}
+            <button
+              onClick={() => {
+                setSearchQuery('is:starred');
+                if (mobileMenuOpen) setMobileMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-4 px-4 py-1.5 rounded-r-full -ml-3 hover:bg-black/5 text-[#444746]"
+            >
+              <Star className="w-4 h-4" />
+              <span>Starred</span>
+            </button>
+
+            {/* Snoozed */}
+            <button className="w-full flex items-center gap-4 px-4 py-1.5 rounded-r-full -ml-3 hover:bg-black/5 text-[#444746]">
+              <Clock className="w-4 h-4" />
+              <span>Snoozed</span>
+            </button>
+
+            {/* Sent */}
+            <button className="w-full flex items-center gap-4 px-4 py-1.5 rounded-r-full -ml-3 hover:bg-black/5 text-[#444746]">
+              <Send className="w-4 h-4" />
+              <span>Sent</span>
+            </button>
+
+            {/* Drafts */}
+            <button className="w-full flex items-center justify-between px-4 py-1.5 rounded-r-full -ml-3 hover:bg-black/5 text-[#444746]">
+              <div className="flex items-center gap-4">
+                <FileText className="w-4 h-4" />
+                <span>Drafts</span>
+              </div>
+              <span className="text-xs text-[#444746]">4</span>
+            </button>
+
+            {/* Categories */}
+            <div className="pt-2">
+              <button className="w-full flex items-center gap-2 px-4 py-1.5 text-xs text-[#444746] hover:bg-black/5 rounded-r-full -ml-3">
+                <ChevronDown className="w-3.5 h-3.5" />
+                <Tag className="w-3.5 h-3.5" />
+                <span>Categories</span>
+              </button>
+              <div className="pl-6 space-y-0.5 mt-0.5">
+                <button className="w-full flex items-center justify-between px-3 py-1 text-xs text-[#444746] hover:bg-black/5 rounded-r-full">
+                  <div className="flex items-center gap-3">
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                    <span>Purchases</span>
+                  </div>
+                  <span>2</span>
+                </button>
+              </div>
+            </div>
+
+            {/* More */}
+            <button className="w-full flex items-center gap-4 px-4 py-1.5 rounded-r-full -ml-3 hover:bg-black/5 text-[#444746]">
+              <ChevronDown className="w-4 h-4" />
+              <span>More</span>
+            </button>
+          </div>
+
+          {/* Labels Section */}
+          <div className="mt-6 pt-4 border-t border-gray-200/80">
+            <div className="flex items-center justify-between px-3 mb-2 text-[#444746]">
+              <span className="text-sm font-semibold">Labels</span>
+              <button aria-label="Create label" className="p-1 hover:bg-black/5 rounded-full">
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        {/* ============================================================ */}
+        {/* 3. MAIN CENTER CONTAINER: View A (Inbox) or View B (Email) */}
+        {/* ============================================================ */}
+        <main className="flex-1 flex flex-col bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/60 relative">
+          {/* Top Banner Notice (Simulated Link Clicked or Threat Reported) */}
+          {threatReportedConfirmed && (
+            <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2.5 flex items-center justify-between text-xs sm:text-sm text-emerald-900 animate-fadeIn">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="font-medium">
+                  Threat Reported: Security team notified. Incident logged in simulation telemetry.
+                </span>
+              </div>
+              <button
+                onClick={() => setThreatReportedConfirmed(false)}
+                className="text-emerald-700 hover:text-emerald-950 p-1 rounded"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {linkNotice && (
+            <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between text-xs sm:text-sm text-amber-900 animate-fadeIn">
+              <div className="flex items-center gap-2 overflow-hidden">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span className="truncate">
+                  <strong>Simulated Link Intercepted:</strong>{' '}
+                  <code className="bg-amber-100 px-1 py-0.5 rounded text-xs">{linkNotice.url}</code>
+                  {' '}&mdash; In a real attack, this would navigate to a malicious credential-harvesting server.
+                </span>
+              </div>
+              <button
+                onClick={() => setLinkNotice(null)}
+                className="text-amber-700 hover:text-amber-950 p-1 rounded shrink-0 ml-2"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {replySuccessMessage && (
+            <div className="bg-blue-50 border-b border-blue-200 px-4 py-2.5 flex items-center justify-between text-xs sm:text-sm text-blue-900 animate-fadeIn">
+              <div className="flex items-center gap-2">
+                <Check className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>{replySuccessMessage}</span>
+              </div>
+              <button
+                onClick={() => setReplySuccessMessage(null)}
+                className="text-blue-700 hover:text-blue-950 p-1 rounded"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* VIEW A: INBOX VIEW */}
+          {currentView === 'inbox' && (
+            <div className="flex-1 flex flex-col h-full overflow-hidden">
+              {/* Inbox Toolbar */}
+              <div className="h-12 border-b border-gray-200/80 px-4 flex items-center justify-between text-[#444746] text-sm shrink-0">
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <div className="flex items-center">
+                    <button
+                      onClick={handleSelectAllToggle}
+                      className="p-1.5 hover:bg-black/5 rounded text-[#444746] focus:outline-none"
+                      title={selectedIds.size === filteredMessages.length ? 'Deselect all' : 'Select all'}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.size > 0 && selectedIds.size === filteredMessages.length}
+                        onChange={handleSelectAllToggle}
+                        className="rounded border-gray-400 text-blue-600 focus:ring-0 cursor-pointer"
+                      />
+                    </button>
+                    <button className="p-1 hover:bg-black/5 rounded text-[#444746]">
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setInboxList([...initialMessages]);
+                      setSearchQuery('');
+                      emitEvent('inbox_refreshed');
+                    }}
+                    title="Refresh"
+                    className="p-2 hover:bg-black/5 rounded-full text-[#444746] transition-transform active:rotate-180"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+
+                  <button title="More actions" className="p-2 hover:bg-black/5 rounded-full text-[#444746]">
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Right Pagination Controls */}
+                <div className="flex items-center gap-2 text-xs text-[#444746]">
+                  <span>
+                    1&ndash;{filteredMessages.length} of {scenario.totalCount || '3,230'}
+                  </span>
+                  <div className="flex items-center">
+                    <button
+                      disabled
+                      className="p-1.5 rounded-full hover:bg-black/5 disabled:opacity-40 text-[#444746]"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      className="p-1.5 rounded-full hover:bg-black/5 text-[#444746]"
+                      onClick={() => emitEvent('pagination_clicked', { page: 2 })}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Message List */}
+              <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
+                {filteredMessages.length === 0 ? (
+                  <div className="p-12 text-center text-gray-500">
+                    <p className="text-base font-medium mb-1">No messages match your search.</p>
+                    <p className="text-xs text-gray-400">Try searching with a different term or clear the filter.</p>
+                  </div>
+                ) : (
+                  filteredMessages.map((msg) => {
+                    const isSelected = selectedIds.has(msg.id);
+                    const isStarred = starredIds.has(msg.id);
+                    const isRead = readIds.has(msg.id) || !msg.isUnread;
+
+                    return (
+                      <div
+                        key={msg.id}
+                        onClick={() => handleOpenEmail(msg)}
+                        className={`group flex items-center px-4 py-2 text-sm cursor-pointer border-b border-gray-100 transition-colors select-none ${
+                          isSelected
+                            ? 'bg-[#c2e7ff]/40'
+                            : isRead
+                            ? 'bg-[#f2f6fc]/40 hover:bg-[#f2f6fc] text-gray-700'
+                            : 'bg-white hover:shadow-xs text-gray-950 font-semibold'
+                        }`}
+                      >
+                        {/* Checkbox */}
+                        <div
+                          onClick={(e) => handleToggleSelect(msg.id, e)}
+                          className="mr-3 text-[#444746] hover:text-[#1f1f1f] flex items-center"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => handleToggleSelect(msg.id, e)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-0 cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Star icon */}
+                        <button
+                          onClick={(e) => handleToggleStar(msg.id, e)}
+                          aria-label={isStarred ? 'Starred' : 'Not starred'}
+                          className="mr-3 text-gray-400 hover:text-gray-600 focus:outline-none transition-colors"
+                        >
+                          <Star
+                            className={`w-4 h-4 ${
+                              isStarred ? 'fill-[#e37400] text-[#e37400]' : 'text-gray-300'
+                            }`}
+                          />
+                        </button>
+
+                        {/* Sender Name */}
+                        <div
+                          className={`w-44 sm:w-48 shrink-0 truncate pr-3 text-sm ${
+                            isRead ? 'font-normal text-gray-700' : 'font-bold text-gray-950'
+                          }`}
+                        >
+                          {msg.sender?.name || 'Unknown Sender'}
+                        </div>
+
+                        {/* Subject + Snippet Preview */}
+                        <div className="flex-1 min-w-0 flex items-center gap-1.5 truncate pr-4">
+                          <span className={`truncate text-sm ${isRead ? 'font-normal text-gray-800' : 'font-bold text-gray-950'}`}>
+                            {msg.subject || '(no subject)'}
+                          </span>
+                          <span className="text-[#5e5e5e] font-normal truncate text-xs sm:text-sm">
+                            &ndash; {msg.preview || ''}
+                          </span>
+
+                          {/* PDF Chip / Attachment indicator if present */}
+                          {msg.attachmentChip && (
+                            <span className="inline-flex items-center gap-1 bg-gray-100 border border-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full ml-2 shrink-0">
+                              <span className="w-2 h-2 rounded-xs bg-red-600"></span>
+                              <span className="text-[11px] font-medium truncate max-w-[100px]">
+                                {msg.attachmentChip.name}
+                              </span>
+                            </span>
+                          )}
+
+                          {msg.hasAttachment && (
+                            <Paperclip className="w-3.5 h-3.5 text-gray-400 shrink-0 ml-1" />
+                          )}
+                        </div>
+
+                        {/* Timestamp & Hover Quick Actions */}
+                        <div className="shrink-0 text-right min-w-[70px]">
+                          {/* Normal Timestamp */}
+                          <span
+                            className={`group-hover:hidden text-xs ${
+                              isRead ? 'text-gray-500 font-normal' : 'text-gray-900 font-semibold'
+                            }`}
+                          >
+                            {msg.timestamp || 'Today'}
+                          </span>
+
+                          {/* Hover action buttons (Gmail style) */}
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="hidden group-hover:flex items-center justify-end gap-1 text-[#444746]"
+                          >
+                            <button
+                              title="Archive"
+                              onClick={() => emitEvent('message_archived', { emailId: msg.id })}
+                              className="p-1 hover:bg-black/10 rounded-full"
+                            >
+                              <Archive className="w-4 h-4" />
+                            </button>
+                            <button
+                              title="Delete"
+                              onClick={() => emitEvent('message_deleted', { emailId: msg.id })}
+                              className="p-1 hover:bg-black/10 rounded-full"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              title="Mark as unread"
+                              onClick={() => {
+                                setReadIds(prev => {
+                                  const next = new Set(prev);
+                                  next.delete(msg.id);
+                                  return next;
+                                });
+                              }}
+                              className="p-1 hover:bg-black/10 rounded-full"
+                            >
+                              <MailCheck className="w-4 h-4" />
+                            </button>
+                            <button
+                              title="Snooze"
+                              onClick={() => emitEvent('message_snoozed', { emailId: msg.id })}
+                              className="p-1 hover:bg-black/10 rounded-full"
+                            >
+                              <Clock className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* VIEW B: OPENED EMAIL VIEW (Reproducing Screenshot 2 exact layout) */}
+          {currentView === 'email' && activeEmail && (
+            <div className="flex-1 flex flex-col h-full overflow-hidden">
+              {/* Message Toolbar */}
+              <div className="h-12 border-b border-gray-200/80 px-4 flex items-center justify-between text-[#444746] text-sm shrink-0 bg-white">
+                <div className="flex items-center gap-1 sm:gap-2">
+                  {/* Back to Inbox */}
+                  <button
+                    onClick={handleBackToInbox}
+                    title="Back to inbox"
+                    className="p-2 hover:bg-black/5 rounded-full text-[#444746] mr-1"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+
+                  <div className="h-4 w-px bg-gray-200 mx-1" />
+
+                  {/* Archive */}
+                  <button
+                    onClick={() => {
+                      emitEvent('message_archived', { emailId: activeEmail.id });
+                      handleBackToInbox();
+                    }}
+                    title="Archive"
+                    className="p-2 hover:bg-black/5 rounded-full text-[#444746]"
+                  >
+                    <Archive className="w-4 h-4" />
+                  </button>
+
+                  {/* Report Spam / Phishing Threat */}
+                  <button
+                    onClick={() => setIsReportModalOpen(true)}
+                    title="Report phishing or spam"
+                    className="p-2 hover:bg-red-50 hover:text-red-600 rounded-full text-[#444746] transition-colors"
+                  >
+                    <AlertOctagon className="w-4 h-4" />
+                  </button>
+
+                  {/* Delete */}
+                  <button
+                    onClick={() => {
+                      emitEvent('message_deleted', { emailId: activeEmail.id });
+                      handleBackToInbox();
+                    }}
+                    title="Delete"
+                    className="p-2 hover:bg-black/5 rounded-full text-[#444746]"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+
+                  <div className="h-4 w-px bg-gray-200 mx-1" />
+
+                  {/* Mark Unread */}
+                  <button
+                    onClick={() => {
+                      setReadIds(prev => {
+                        const next = new Set(prev);
+                        next.delete(activeEmail.id);
+                        return next;
+                      });
+                      handleBackToInbox();
+                    }}
+                    title="Mark unread"
+                    className="p-2 hover:bg-black/5 rounded-full text-[#444746]"
+                  >
+                    <MailCheck className="w-4 h-4" />
+                  </button>
+
+                  {/* Snooze */}
+                  <button
+                    onClick={() => emitEvent('message_snoozed', { emailId: activeEmail.id })}
+                    title="Snooze"
+                    className="p-2 hover:bg-black/5 rounded-full text-[#444746]"
+                  >
+                    <Clock className="w-4 h-4" />
+                  </button>
+
+                  {/* Add Task */}
+                  <button
+                    onClick={() => emitEvent('added_to_tasks', { emailId: activeEmail.id })}
+                    title="Add to tasks"
+                    className="p-2 hover:bg-black/5 rounded-full text-[#444746]"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                  </button>
+
+                  {/* Move to folder */}
+                  <button
+                    onClick={() => emitEvent('move_to_clicked', { emailId: activeEmail.id })}
+                    title="Move to"
+                    className="p-2 hover:bg-black/5 rounded-full text-[#444746]"
+                  >
+                    <FolderInput className="w-4 h-4" />
+                  </button>
+
+                  {/* Labels */}
+                  <button
+                    onClick={() => emitEvent('labels_clicked', { emailId: activeEmail.id })}
+                    title="Labels"
+                    className="p-2 hover:bg-black/5 rounded-full text-[#444746]"
+                  >
+                    <Tag className="w-4 h-4" />
+                  </button>
+
+                  {/* More actions */}
+                  <button title="More actions" className="p-2 hover:bg-black/5 rounded-full text-[#444746]">
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Right pagination */}
+                <div className="flex items-center gap-2 text-xs text-[#444746]">
+                  <span>4 of 3,230</span>
+                  <div className="flex items-center">
+                    <button className="p-1.5 rounded-full hover:bg-black/5 text-[#444746]">
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button className="p-1.5 rounded-full hover:bg-black/5 text-[#444746]">
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Email Scrollable View Area */}
+              <div className="flex-1 overflow-y-auto px-6 lg:px-10 py-6 max-w-5xl">
+                {/* Email Subject Header */}
+                <div className="flex items-start justify-between gap-4 mb-5">
+                  <div className="flex items-center flex-wrap gap-2.5">
+                    <h1 className="text-xl sm:text-2xl font-normal text-gray-900 tracking-tight">
+                      {activeEmail.subject || '(no subject)'}
+                    </h1>
+
+                    {/* Scenario Labels */}
+                    {(activeEmail.labels || ['Inbox']).map((lbl, idx) => {
+                      const isExternal = lbl.toLowerCase() === 'external';
+                      return (
+                        <span
+                          key={idx}
+                          className={`text-xs px-2 py-0.5 rounded font-medium ${
+                            isExternal
+                              ? 'bg-[#feefe3] text-[#b06000] border border-[#f9ab00]'
+                              : 'bg-gray-100 text-gray-700'
+                          }`}
+                        >
+                          {lbl}
+                        </span>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0 text-[#444746]">
+                    <button title="Print all" className="p-1.5 hover:bg-black/5 rounded-full">
+                      <Printer className="w-4 h-4" />
+                    </button>
+                    <button title="In new window" className="p-1.5 hover:bg-black/5 rounded-full">
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sender Information Card */}
+                <div className="flex items-start justify-between gap-3 mb-6">
+                  <div className="flex items-start gap-3">
+                    {/* Sender Avatar */}
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm ${
+                        activeEmail.sender?.avatarBg || 'bg-red-700 text-white'
+                      }`}
+                    >
+                      {activeEmail.sender?.avatar || activeEmail.sender?.name?.charAt(0) || 'V'}
+                    </div>
+
+                    {/* Sender Name & To info */}
+                    <div>
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="font-bold text-sm text-gray-950">
+                          {activeEmail.sender?.name || 'VIT Events'}
+                        </span>
+                        <span className="text-xs text-[#5e5e5e]">
+                          &lt;{activeEmail.sender?.email || 'events-security@vit-update.ac.in'}&gt;
+                        </span>
+                      </div>
+
+                      {/* Recipient Dropdown Toggle ("to me ▾") */}
+                      <div className="relative inline-block mt-0.5">
+                        <button
+                          onClick={() => setShowSecurityDetails(prev => !prev)}
+                          className="flex items-center text-xs text-[#5e5e5e] hover:text-[#1f1f1f] focus:outline-none"
+                        >
+                          <span>to me</span>
+                          <ChevronDown className="w-3.5 h-3.5 ml-0.5 text-gray-400" />
+                        </button>
+
+                        {/* Security Details Card (Key for trainee phishing header inspection) */}
+                        {showSecurityDetails && (
+                          <div className="absolute top-6 left-0 z-30 w-80 sm:w-96 p-4 bg-white rounded-xl shadow-xl border border-gray-200 text-xs text-gray-700 font-normal animate-fadeIn">
+                            <div className="space-y-1.5">
+                              <div className="flex">
+                                <span className="w-20 text-gray-400">from:</span>
+                                <span className="font-medium text-gray-900 break-all">
+                                  {activeEmail.securityDetails?.from || activeEmail.sender?.email}
+                                </span>
+                              </div>
+                              <div className="flex">
+                                <span className="w-20 text-gray-400">reply-to:</span>
+                                <span className="text-gray-800 break-all">
+                                  {activeEmail.securityDetails?.replyTo || 'helpdesk-reply@vit-update.ac.in'}
+                                </span>
+                              </div>
+                              <div className="flex">
+                                <span className="w-20 text-gray-400">to:</span>
+                                <span className="text-gray-800 break-all">
+                                  {activeEmail.securityDetails?.to || userProfile.email}
+                                </span>
+                              </div>
+                              <div className="flex">
+                                <span className="w-20 text-gray-400">date:</span>
+                                <span className="text-gray-800">
+                                  {activeEmail.securityDetails?.date || activeEmail.fullTimestamp || 'Oct 18, 2026'}
+                                </span>
+                              </div>
+                              <div className="flex">
+                                <span className="w-20 text-gray-400">subject:</span>
+                                <span className="text-gray-800">{activeEmail.subject}</span>
+                              </div>
+                              <div className="flex">
+                                <span className="w-20 text-gray-400">mailed-by:</span>
+                                <span className="text-red-700 font-mono bg-red-50 px-1 rounded">
+                                  {activeEmail.securityDetails?.mailedBy || 'unverified-mail-server.com'}
+                                </span>
+                              </div>
+                              <div className="flex">
+                                <span className="w-20 text-gray-400">signed-by:</span>
+                                <span className="text-gray-800 font-mono">
+                                  {activeEmail.securityDetails?.signedBy || 'vit-update.ac.in'}
+                                </span>
+                              </div>
+                              <div className="flex">
+                                <span className="w-20 text-gray-400">security:</span>
+                                <span className="text-gray-800">
+                                  {activeEmail.securityDetails?.security || 'Standard encryption (TLS)'}
+                                </span>
+                              </div>
+                              {activeEmail.securityDetails?.spf && (
+                                <div className="flex">
+                                  <span className="w-20 text-gray-400">SPF check:</span>
+                                  <span className="text-amber-800 font-semibold bg-amber-50 px-1 rounded">
+                                    {activeEmail.securityDetails.spf}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Header right: Timestamp, Star, Emoji, Reply, More */}
+                  <div className="flex items-center gap-1 sm:gap-2 text-[#444746] shrink-0">
+                    <span className="text-xs text-[#5e5e5e] mr-1 hidden sm:inline">
+                      {activeEmail.fullTimestamp || activeEmail.timestamp || 'Oct 18, 2026, 9:24 AM'}
+                    </span>
+
+                    <button
+                      onClick={(e) => handleToggleStar(activeEmail.id, e)}
+                      aria-label="Star"
+                      className="p-1.5 hover:bg-black/5 rounded-full"
+                    >
+                      <Star
+                        className={`w-4 h-4 ${
+                          starredIds.has(activeEmail.id)
+                            ? 'fill-[#e37400] text-[#e37400]'
+                            : 'text-gray-400'
+                        }`}
+                      />
+                    </button>
+
+                    <button title="Add reaction" className="p-1.5 hover:bg-black/5 rounded-full">
+                      <Smile className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => setIsReplying(true)}
+                      title="Reply"
+                      className="p-1.5 hover:bg-black/5 rounded-full"
+                    >
+                      <CornerUpLeft className="w-4 h-4" />
+                    </button>
+
+                    <button title="More options" className="p-1.5 hover:bg-black/5 rounded-full">
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* EMAIL BODY CONTENT (Safely rendered content blocks without dangerouslySetInnerHTML) */}
+                <div className="text-sm text-gray-800 leading-relaxed space-y-4 pl-0 sm:pl-13 pb-8">
+                  {/* If structured contentBlocks are provided */}
+                  {Array.isArray(activeEmail.contentBlocks) ? (
+                    activeEmail.contentBlocks.map((block, idx) => {
+                      switch (block.type) {
+                        case 'paragraph':
+                          return (
+                            <p key={idx} className="text-gray-800">
+                              {block.text}
+                            </p>
+                          );
+
+                        case 'alert':
+                          return (
+                            <div
+                              key={idx}
+                              className={`p-4 rounded-xl border flex items-start gap-3 my-3 ${
+                                block.level === 'warning'
+                                  ? 'bg-amber-50/70 border-amber-200 text-amber-900'
+                                  : 'bg-blue-50 border-blue-200 text-blue-900'
+                              }`}
+                            >
+                              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                              <div className="text-xs sm:text-sm">
+                                {block.title && <div className="font-bold mb-1">{block.title}</div>}
+                                <div>{block.text}</div>
+                              </div>
+                            </div>
+                          );
+
+                        case 'button':
+                          return (
+                            <div key={idx} className="my-4">
+                              <button
+                                onClick={(e) => handleSimulatedAction(e, block)}
+                                className="inline-flex items-center gap-2 bg-[#0b57d0] hover:bg-[#0842a0] text-white px-6 py-2.5 rounded-full font-medium text-sm shadow-sm hover:shadow transition-all active:scale-98"
+                              >
+                                <span>{block.text || 'Action Required'}</span>
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+
+                        case 'link':
+                          return (
+                            <div key={idx} className="my-2">
+                              <a
+                                href={block.url || '#'}
+                                onClick={(e) => handleSimulatedAction(e, block)}
+                                className="text-[#0b57d0] hover:underline font-mono text-xs sm:text-sm break-all inline-flex items-center gap-1"
+                              >
+                                <span>{block.text || block.url}</span>
+                                <ExternalLink className="w-3 h-3 shrink-0" />
+                              </a>
+                            </div>
+                          );
+
+                        case 'quote':
+                          return (
+                            <blockquote
+                              key={idx}
+                              className="pl-4 border-l-3 border-gray-300 italic text-gray-600 text-xs my-2"
+                            >
+                              {block.text}
+                            </blockquote>
+                          );
+
+                        case 'signature':
+                          return (
+                            <div key={idx} className="pt-4 border-t border-gray-200 text-xs text-gray-600 whitespace-pre-line">
+                              {block.text}
+                            </div>
+                          );
+
+                        default:
+                          return (
+                            <p key={idx} className="text-gray-800">
+                              {block.text || JSON.stringify(block)}
+                            </p>
+                          );
+                      }
+                    })
+                  ) : (
+                    /* Fallback if body is simple string or array of strings */
+                    <div className="space-y-3">
+                      {typeof activeEmail.body === 'string'
+                        ? activeEmail.body.split('\n\n').map((para, i) => (
+                            <p key={i} className="text-gray-800">
+                              {para}
+                            </p>
+                          ))
+                        : (
+                            <p className="text-gray-800">
+                              {activeEmail.preview || 'No email content provided.'}
+                            </p>
+                          )}
+                    </div>
+                  )}
+
+                  {/* Attachment Cards (if attachments exist) */}
+                  {Array.isArray(activeEmail.attachments) && activeEmail.attachments.length > 0 && (
+                    <div className="pt-6 border-t border-gray-200 mt-6">
+                      <div className="text-xs font-semibold text-gray-500 mb-3 flex items-center gap-1.5">
+                        <Paperclip className="w-3.5 h-3.5" />
+                        <span>{activeEmail.attachments.length} Attachment</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
+                        {activeEmail.attachments.map((att) => (
+                          <div
+                            key={att.id}
+                            className="flex items-center justify-between p-3 rounded-lg border border-gray-200 bg-gray-50/50 hover:bg-gray-100/80 transition-colors"
+                          >
+                            <div className="flex items-center gap-2.5 truncate mr-2">
+                              <div className="w-8 h-8 rounded bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                                <FileIcon className="w-4 h-4" />
+                              </div>
+                              <div className="truncate">
+                                <div className="text-xs font-medium text-gray-900 truncate">
+                                  {att.name}
+                                </div>
+                                <div className="text-[10px] text-gray-500">{att.size}</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                onClick={(e) => handleSimulatedAction(e, { id: att.id, text: `Download ${att.name}`, url: att.url || 'attachment://' + att.name })}
+                                title="Download attachment"
+                                className="p-1.5 hover:bg-gray-200 rounded text-gray-600"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Bottom Action Controls (Reply, Forward) */}
+                {!isReplying && (
+                  <div className="flex items-center gap-3 pl-0 sm:pl-13 pt-4 border-t border-gray-100">
+                    <button
+                      onClick={() => setIsReplying(true)}
+                      className="inline-flex items-center gap-2 px-6 py-2 rounded-full border border-gray-300 hover:bg-gray-50 text-xs sm:text-sm font-medium text-[#444746] transition-colors"
+                    >
+                      <CornerUpLeft className="w-4 h-4" />
+                      <span>Reply</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setIsReplying(true);
+                        emitEvent('forward_clicked', { emailId: activeEmail.id });
+                      }}
+                      className="inline-flex items-center gap-2 px-6 py-2 rounded-full border border-gray-300 hover:bg-gray-50 text-xs sm:text-sm font-medium text-[#444746] transition-colors"
+                    >
+                      <CornerUpRight className="w-4 h-4" />
+                      <span>Forward</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Inline Reply Composer */}
+                {isReplying && (
+                  <div className="pl-0 sm:pl-13 mt-6 animate-fadeIn">
+                    <div className="border border-gray-300 rounded-xl bg-white shadow-sm overflow-hidden">
+                      <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between text-xs text-gray-600">
+                        <div className="flex items-center gap-2">
+                          <CornerUpLeft className="w-4 h-4 text-gray-500" />
+                          <span>
+                            Reply to <strong>{activeEmail.sender?.name || 'Sender'}</strong> ({activeEmail.sender?.email})
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setIsReplying(false)}
+                          className="p-1 hover:bg-gray-200 rounded text-gray-500"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="p-3">
+                        <textarea
+                          rows={4}
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
+                          placeholder="Type your reply here... (Simulation mode: No actual message will be transmitted)"
+                          className="w-full border-none outline-none text-sm text-gray-800 placeholder-gray-400 resize-none font-sans"
+                        />
+                      </div>
+
+                      <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                        <button
+                          onClick={handleSendReply}
+                          disabled={!replyText.trim()}
+                          className="inline-flex items-center gap-2 bg-[#0b57d0] hover:bg-[#0842a0] disabled:bg-gray-300 text-white px-5 py-2 rounded-full text-xs font-semibold shadow-xs transition-colors"
+                        >
+                          <span>Send</span>
+                        </button>
+
+                        <div className="flex items-center gap-2 text-gray-500">
+                          <span className="text-[11px] text-gray-400 italic">
+                            Simulated reply event will be logged
+                          </span>
+                          <button
+                            onClick={() => {
+                              setReplyText('');
+                              setIsReplying(false);
+                            }}
+                            className="p-1.5 hover:bg-gray-200 rounded text-gray-500"
+                            title="Discard draft"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </main>
+
+        {/* Right Rail: Google Workspace Quick Access (Calendar, Keep, Tasks, Contacts) */}
+        <aside
+          aria-label="Workspace Tools"
+          className="hidden xl:flex w-14 shrink-0 flex-col items-center py-4 gap-6 bg-[#f6f8fc] border-l border-transparent select-none text-gray-600"
+        >
+          {/* Calendar */}
+          <button
+            title="Calendar"
+            onClick={() => emitEvent('side_tool_clicked', { tool: 'calendar' })}
+            className="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center transition-colors"
+          >
+            <div className="w-5 h-5 bg-[#1a73e8] text-white rounded text-[10px] font-bold flex items-center justify-center">
+              31
+            </div>
+          </button>
+
+          {/* Keep */}
+          <button
+            title="Keep"
+            onClick={() => emitEvent('side_tool_clicked', { tool: 'keep' })}
+            className="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center transition-colors"
+          >
+            <div className="w-5 h-5 bg-[#fbbc04] text-white rounded-full flex items-center justify-center text-[10px]">
+              💡
+            </div>
+          </button>
+
+          {/* Tasks */}
+          <button
+            title="Tasks"
+            onClick={() => emitEvent('side_tool_clicked', { tool: 'tasks' })}
+            className="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center transition-colors"
+          >
+            <div className="w-5 h-5 bg-[#1a73e8] text-white rounded-full flex items-center justify-center text-[10px]">
+              ✓
+            </div>
+          </button>
+
+          {/* Contacts */}
+          <button
+            title="Contacts"
+            onClick={() => emitEvent('side_tool_clicked', { tool: 'contacts' })}
+            className="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center transition-colors"
+          >
+            <div className="w-5 h-5 bg-[#1a73e8] text-white rounded-full flex items-center justify-center text-[10px]">
+              👤
+            </div>
+          </button>
+
+          <div className="w-4 h-px bg-gray-300 my-1" />
+
+          {/* Plus Add-ons */}
+          <button
+            title="Get Add-ons"
+            className="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center text-gray-500"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </aside>
+      </div>
+
+      {/* ============================================================== */}
+      {/* 4. THREAT REPORTING MODAL (Critical awareness training workflow) */}
+      {/* ============================================================== */}
+      {isReportModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fadeIn"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-red-50/70 border-b border-red-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">
+                    Report Social Engineering Threat
+                  </h3>
+                  <p className="text-xs text-gray-600">
+                    Confirm suspicious indicators in this email
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsReportModalOpen(false)}
+                className="p-1 rounded-full hover:bg-red-100 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body: Indicator Selection */}
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-gray-600 leading-normal">
+                Reporting this email will log your detection telemetry and notify the automated awareness evaluation system. Select any indicators you detected:
+              </p>
+
+              <div className="space-y-2.5 text-xs text-gray-800">
+                <label className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-100">
+                  <input
+                    type="checkbox"
+                    checked={reportIndicators.suspiciousSender}
+                    onChange={(e) =>
+                      setReportIndicators(prev => ({ ...prev, suspiciousSender: e.target.checked }))
+                    }
+                    className="mt-0.5 rounded text-red-600 focus:ring-0 cursor-pointer"
+                  />
+                  <div>
+                    <span className="font-semibold text-gray-900 block">
+                      Suspicious Sender Address or Domain
+                    </span>
+                    <span className="text-gray-500 text-[11px]">
+                      Sender domain differs from official institution domain (e.g., <code>vit-update.ac.in</code>)
+                    </span>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-100">
+                  <input
+                    type="checkbox"
+                    checked={reportIndicators.urgentActionThreat}
+                    onChange={(e) =>
+                      setReportIndicators(prev => ({ ...prev, urgentActionThreat: e.target.checked }))
+                    }
+                    className="mt-0.5 rounded text-red-600 focus:ring-0 cursor-pointer"
+                  />
+                  <div>
+                    <span className="font-semibold text-gray-900 block">
+                      Artificial Urgency / Account Suspension Threat
+                    </span>
+                    <span className="text-gray-500 text-[11px]">
+                      Imposes short deadline (&lt;24 hours) with severe consequences
+                    </span>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-100">
+                  <input
+                    type="checkbox"
+                    checked={reportIndicators.credentialHarvestLink}
+                    onChange={(e) =>
+                      setReportIndicators(prev => ({ ...prev, credentialHarvestLink: e.target.checked }))
+                    }
+                    className="mt-0.5 rounded text-red-600 focus:ring-0 cursor-pointer"
+                  />
+                  <div>
+                    <span className="font-semibold text-gray-900 block">
+                      Phishing / Credential Harvesting Link
+                    </span>
+                    <span className="text-gray-500 text-[11px]">
+                      Calls to action redirect to external lookalike portal
+                    </span>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-100">
+                  <input
+                    type="checkbox"
+                    checked={reportIndicators.anomalousHeader}
+                    onChange={(e) =>
+                      setReportIndicators(prev => ({ ...prev, anomalousHeader: e.target.checked }))
+                    }
+                    className="mt-0.5 rounded text-red-600 focus:ring-0 cursor-pointer"
+                  />
+                  <div>
+                    <span className="font-semibold text-gray-900 block">
+                      Failed Routing / SPF Authentication
+                    </span>
+                    <span className="text-gray-500 text-[11px]">
+                      Email authentication headers indicate unverified mail server
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Optional notes */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Additional Notes (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={reportNotes}
+                  onChange={(e) => setReportNotes(e.target.value)}
+                  placeholder="Describe anything else that caught your attention..."
+                  className="w-full text-xs p-2.5 border border-gray-200 rounded-lg outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="px-6 py-3.5 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-2.5">
+              <button
+                onClick={() => setIsReportModalOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-200/60 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmReport}
+                className="px-5 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Confirm & Report Threat</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 5. FLOATING COMPOSE WINDOW (Gmail bottom-right compose dialog) */}
+      {/* ============================================================== */}
+      {isComposeOpen && (
+        <div
+          role="region"
+          aria-label="Compose new message"
+          className="fixed bottom-0 right-4 z-40 w-96 sm:w-[500px] bg-white rounded-t-xl shadow-2xl border border-gray-300 flex flex-col overflow-hidden animate-slideUp"
+        >
+          {/* Window Header */}
+          <div className="h-10 bg-[#f2f6fc] px-4 flex items-center justify-between text-xs font-semibold text-gray-800 border-b border-gray-200">
+            <span>New Message (Simulated)</span>
+            <div className="flex items-center gap-2 text-gray-500">
+              <button
+                onClick={() => setIsComposeOpen(false)}
+                className="p-1 hover:bg-gray-200 rounded"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Form Fields */}
+          <div className="p-3 space-y-2 text-xs">
+            {composeStatus && (
+              <div className="p-2 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-center">
+                {composeStatus}
+              </div>
+            )}
+            <input
+              type="text"
+              value={composeTo}
+              onChange={(e) => setComposeTo(e.target.value)}
+              placeholder="Recipients"
+              className="w-full border-b border-gray-200 pb-1 outline-none text-xs text-gray-800 placeholder-gray-400"
+            />
+            <input
+              type="text"
+              value={composeSubject}
+              onChange={(e) => setComposeSubject(e.target.value)}
+              placeholder="Subject"
+              className="w-full border-b border-gray-200 pb-1 outline-none text-xs text-gray-800 placeholder-gray-400"
+            />
+            <textarea
+              rows={6}
+              value={composeBody}
+              onChange={(e) => setComposeBody(e.target.value)}
+              placeholder="Compose your simulated email..."
+              className="w-full border-none outline-none text-xs text-gray-800 placeholder-gray-400 resize-none pt-2"
+            />
+          </div>
+
+          {/* Footer with Send */}
+          <div className="px-4 py-2.5 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+            <button
+              onClick={handleSendCompose}
+              className="bg-[#0b57d0] hover:bg-[#0842a0] text-white px-5 py-1.5 rounded-full text-xs font-semibold shadow-xs"
+            >
+              Send
+            </button>
+            <button
+              onClick={() => {
+                setIsComposeOpen(false);
+                setComposeTo('');
+                setComposeSubject('');
+                setComposeBody('');
+              }}
+              className="p-1.5 hover:bg-gray-200 rounded text-gray-500"
+              title="Discard draft"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 6. SIMULATION TERMINAL STATE OVERLAY (When completed by controller) */}
+      {/* ============================================================== */}
+      {isTerminal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 text-center border border-gray-200">
+            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">
+              Email Simulation Concluded
+            </h2>
+            <p className="text-xs text-gray-600 mb-6 leading-relaxed">
+              The interaction period for this email scenario has been finalized by the simulation controller. All telemetry and threat metrics were captured.
+            </p>
+            <button
+              onClick={() => {
+                setIsTerminal(false);
+                emitEvent('scenario_completed', { status: 'concluded' });
+              }}
+              className="w-full bg-[#0b57d0] hover:bg-[#0842a0] text-white py-2.5 rounded-xl text-xs font-semibold shadow-sm transition-colors"
+            >
+              Review Simulation Telemetry
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
