@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import Session, { ALLOWED_CHANNELS, ALLOWED_TERMINAL_STATUSES } from '../models/Session.js';
+import SimulationEvent from '../models/SimulationEvent.js';
 
 const router = express.Router();
 
@@ -171,10 +172,61 @@ router.patch('/:sessionId/status', async (req, res, next) => {
       });
     }
 
-    // Conflict: attempting to transition from one terminal state to another, or reopen
-    return res.status(409).json({
-      success: false,
-      error: `Cannot transition session from "${existingSession.status}" to "${requestedStatus}". Terminal sessions cannot be altered or reopened.`
+      // Conflict: attempting to transition from one terminal state to another, or reopen
+      return res.status(409).json({
+        success: false,
+        error: `Cannot transition session from "${existingSession.status}" to "${requestedStatus}". Terminal sessions cannot be altered or reopened.`
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+/**
+ * GET /api/sessions/:sessionId/events
+ * Retrieves chronological persisted simulation events for a session.
+ * Supports bounded pagination (default limit 50, max 200).
+ */
+router.get('/:sessionId/events', async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+
+    if (!sessionId || !SESSION_ID_REGEX.test(sessionId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid sessionId format.'
+      });
+    }
+
+    // Verify that session exists
+    const session = await Session.findOne({ sessionId });
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: `Session "${sessionId}" not found.`
+      });
+    }
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const skip = (page - 1) * limit;
+
+    const [events, total] = await Promise.all([
+      SimulationEvent.find({ sessionId })
+        .sort({ timestamp: 1, eventId: 1 })
+        .skip(skip)
+        .limit(limit),
+      SimulationEvent.countDocuments({ sessionId })
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      sessionId,
+      count: events.length,
+      total,
+      page,
+      limit,
+      events
     });
   } catch (err) {
     next(err);

@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Clock
 } from 'lucide-react';
+import { sendTelemetryEvent } from './services/telemetryService';
 
 /**
  * Maps channel-specific completion payloads to standardized session lifecycle statuses.
@@ -157,6 +158,14 @@ export default function App() {
     if (currentSessionId && sessionStatus === 'active' && !terminalStatusRef.current) {
       try {
         terminalStatusRef.current = 'abandoned';
+
+        // Persist terminal telemetry event for abandonment
+        sendTelemetryEvent({
+          sessionId: currentSessionId,
+          eventType: 'simulation_abandoned',
+          metadata: { reason: 'user_navigated_away' }
+        }).catch(() => {});
+
         await fetch(`/api/sessions/${currentSessionId}/status`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },

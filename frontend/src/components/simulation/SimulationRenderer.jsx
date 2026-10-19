@@ -4,6 +4,7 @@ import ChatSimulation from './ChatSimulation';
 import SmsSimulation from './SmsSimulation';
 import WebsiteSimulation from './WebsiteSimulation';
 import { AlertOctagon, HelpCircle } from 'lucide-react';
+import { sendTelemetryEvent } from '../../services/telemetryService';
 
 /**
  * Supported simulation channels allowlist
@@ -80,7 +81,6 @@ export default function SimulationRenderer({
   const handleNormalizedAction = useCallback(
     (event) => {
       const activeCallback = onAction || onEvent;
-      if (typeof activeCallback !== 'function') return;
 
       const normalizedEvent = {
         ...event,
@@ -94,10 +94,24 @@ export default function SimulationRenderer({
         }
       };
 
-      try {
-        activeCallback(normalizedEvent);
-      } catch (err) {
-        console.error('[SimulationRenderer] Error dispatching event callback:', err);
+      // Dispatch telemetry event to backend if a valid sessionId exists
+      if (sessionId && sessionId !== 'sess-sim-default' && event?.eventType) {
+        sendTelemetryEvent({
+          sessionId,
+          eventType: event.eventType,
+          metadata: normalizedEvent.metadata,
+          clientTimestamp: normalizedEvent.timestamp
+        }).catch((err) => {
+          console.warn('[SimulationRenderer] Telemetry send error:', err);
+        });
+      }
+
+      if (typeof activeCallback === 'function') {
+        try {
+          activeCallback(normalizedEvent);
+        } catch (err) {
+          console.error('[SimulationRenderer] Error dispatching event callback:', err);
+        }
       }
     },
     [channel, onAction, onEvent, scenario, sessionId]

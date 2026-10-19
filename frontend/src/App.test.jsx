@@ -139,6 +139,16 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
             })
           });
         }
+        if (url.includes('/api/events')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({
+              success: true,
+              event: { eventId: 'evt-test-1', eventType: 'test' }
+            })
+          });
+        }
         if (url.includes('/api/sessions/sess-email-test-111/status')) {
           patchPayload = JSON.parse(options.body);
           return Promise.resolve({
@@ -223,6 +233,16 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
             })
           });
         }
+        if (url.includes('/api/events')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({
+              success: true,
+              event: { eventId: 'evt-dup-1', eventType: 'test' }
+            })
+          });
+        }
         if (url.includes('/api/sessions/sess-dup-test-222/status')) {
           patchCallCount++;
           return Promise.resolve({
@@ -293,6 +313,13 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
             })
           });
         }
+        if (url.includes('/api/events')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({ success: true, event: { eventId: 'evt-sync-1' } })
+          });
+        }
         if (url.includes('/api/sessions/sess-sync-err-333/status')) {
           return Promise.resolve({
             ok: false,
@@ -331,6 +358,7 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
 
     it('marks active session as abandoned when returning to generator early and preserves user prompt', async () => {
       let abandonedPatchSent = false;
+      let abandonedEventSent = false;
       const testPrompt = 'Urgent invoice attachment email';
 
       global.fetch = vi.fn((url, options) => {
@@ -364,6 +392,17 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
             })
           });
         }
+        if (url.includes('/api/events')) {
+          const body = JSON.parse(options.body);
+          if (body.eventType === 'simulation_abandoned') {
+            abandonedEventSent = true;
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({ success: true, event: { eventId: 'evt-abandon-1' } })
+          });
+        }
         if (url.includes('/api/sessions/sess-abandon-444/status')) {
           const body = JSON.parse(options.body);
           if (body.status === 'abandoned') {
@@ -393,11 +432,81 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
       const returnBtn = screen.getByTestId('return-to-generator-btn');
       fireEvent.click(returnBtn);
 
-      // Verify returning to Home view with prompt preserved
+      // Verify returning to Home view with prompt preserved and abandonment transmitted
       await waitFor(() => {
         expect(screen.getByText(/AI Social Engineering Simulator/i)).toBeInTheDocument();
         expect(screen.getByTestId('prompt-input').value).toBe(testPrompt);
         expect(abandonedPatchSent).toBe(true);
+        expect(abandonedEventSent).toBe(true);
+      });
+    });
+
+    it('submits simulation events through shared telemetry service with correct backend sessionId', async () => {
+      const recordedEvents = [];
+
+      global.fetch = vi.fn((url, options) => {
+        if (url.includes('/api/scenarios/generate')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scenario: {
+                scenarioId: 'scen-telemetry-demo',
+                channel: 'email',
+                title: 'Telemetry Phish Test',
+                emailData: {
+                  id: 'm1',
+                  isTarget: true,
+                  sender: { name: 'IT Desk', email: 'it@univ.edu' },
+                  subject: 'IT Notice',
+                  contentBlocks: [{ type: 'paragraph', text: 'Body.' }]
+                }
+              }
+            })
+          });
+        }
+        if (url.includes('/api/sessions') && !url.includes('/status')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              sessionId: 'sess-telemetry-valid-777',
+              session: { sessionId: 'sess-telemetry-valid-777', status: 'active' }
+            })
+          });
+        }
+        if (url.includes('/api/events')) {
+          recordedEvents.push(JSON.parse(options.body));
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({
+              success: true,
+              event: { eventId: 'evt-rec-1' }
+            })
+          });
+        }
+        return Promise.reject(new Error(`Unhandled URL: ${url}`));
+      });
+
+      render(<App />);
+
+      fireEvent.change(screen.getByTestId('prompt-input'), {
+        target: { value: 'Simulate university IT notice' }
+      });
+      fireEvent.click(screen.getByTestId('generate-button'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Telemetry Phish Test')).toBeInTheDocument();
+      });
+
+      // User interacts: opens email
+      fireEvent.click(screen.getByText('IT Notice'));
+
+      await waitFor(() => {
+        const openedEvent = recordedEvents.find((e) => e.eventType === 'message_opened');
+        expect(openedEvent).toBeDefined();
+        expect(openedEvent.sessionId).toBe('sess-telemetry-valid-777');
       });
     });
   });
