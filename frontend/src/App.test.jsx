@@ -705,4 +705,281 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
       expect(screen.queryByTestId('behavior-score-badge')).not.toBeInTheDocument();
     });
   });
+
+  describe('AI Awareness and Remediation Report Flow (Step 4)', () => {
+    it('displays View Awareness Report button and transitions to report view on user click', async () => {
+      let reportCalledCount = 0;
+
+      global.fetch = vi.fn((url, options) => {
+        if (url.includes('/api/scenarios/generate')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scenario: {
+                scenarioId: 'scen-report-full-demo',
+                channel: 'email',
+                title: 'Security Alert Simulation',
+                emailData: {
+                  id: 'm-rep-1',
+                  isTarget: true,
+                  sender: { name: 'Support', email: 'support@fakedomain.org' },
+                  subject: 'Urgent Action Needed',
+                  contentBlocks: [{ type: 'paragraph', text: 'Action required.' }]
+                }
+              }
+            })
+          });
+        }
+        if (url.includes('/api/sessions') && !url.includes('/status') && !url.includes('/score') && !url.includes('/report')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({
+              success: true,
+              sessionId: 'sess-report-flow-111',
+              session: { sessionId: 'sess-report-flow-111', status: 'active', channel: 'email' }
+            })
+          });
+        }
+        if (url.includes('/api/events')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({ success: true })
+          });
+        }
+        if (url.includes('/api/sessions/sess-report-flow-111/status')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              session: { sessionId: 'sess-report-flow-111', status: 'reported' }
+            })
+          });
+        }
+        if (url.includes('/api/sessions/sess-report-flow-111/score')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scoreRecord: {
+                sessionId: 'sess-report-flow-111',
+                score: 95,
+                riskLevel: 'low',
+                scoringVersion: '1.0.0',
+                revision: 1
+              }
+            })
+          });
+        }
+        if (url.includes('/api/sessions/sess-report-flow-111/report') && options?.method === 'POST') {
+          reportCalledCount++;
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              cached: false,
+              report: {
+                sessionId: 'sess-report-flow-111',
+                scenarioId: 'scen-report-full-demo',
+                channel: 'email',
+                score: 95,
+                riskLevel: 'low',
+                scoreRevision: 1,
+                summary: 'Outstanding job recognizing deceptive cues.',
+                strengths: ['Identified suspicious sender domain', 'Used security report button'],
+                riskyBehaviors: [],
+                threatIndicators: ['Urgency tactics'],
+                recommendations: ['Maintain current email verification habits.'],
+                keyEvents: []
+              }
+            })
+          });
+        }
+        return Promise.reject(new Error(`Unhandled URL: ${url}`));
+      });
+
+      render(<App />);
+
+      fireEvent.change(screen.getByTestId('prompt-input'), {
+        target: { value: 'Demonstrate report navigation' }
+      });
+      fireEvent.click(screen.getByTestId('generate-button'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Security Alert Simulation')).toBeInTheDocument();
+      });
+
+      // Initially no report button while active
+      expect(screen.queryByTestId('view-report-btn')).not.toBeInTheDocument();
+
+      // Complete simulation (open & report)
+      fireEvent.click(screen.getByText('Urgent Action Needed'));
+      fireEvent.click(screen.getByTitle('Report phishing or spam'));
+      fireEvent.click(screen.getByLabelText(/Suspicious Sender Address or Domain/i));
+      fireEvent.click(screen.getByText('Confirm & Report Threat'));
+
+      // View Awareness Report button appears
+      await waitFor(() => {
+        expect(screen.getByTestId('view-report-btn')).toBeInTheDocument();
+      });
+
+      // Click to view report
+      fireEvent.click(screen.getByTestId('view-report-btn'));
+
+      // Report View is displayed
+      await waitFor(() => {
+        expect(screen.getByTestId('report-view')).toBeInTheDocument();
+        expect(screen.getByText('Outstanding job recognizing deceptive cues.')).toBeInTheDocument();
+        expect(screen.getByText('Identified suspicious sender domain')).toBeInTheDocument();
+      });
+
+      // Return to simulation view
+      fireEvent.click(screen.getByTestId('back-to-simulation-btn'));
+      await waitFor(() => {
+        expect(screen.getByText('Security Alert Simulation')).toBeInTheDocument();
+      });
+
+      // Re-opening report view does not trigger duplicate generation
+      fireEvent.click(screen.getByTestId('view-report-btn'));
+      await waitFor(() => {
+        expect(screen.getByTestId('report-view')).toBeInTheDocument();
+      });
+      expect(reportCalledCount).toBe(1);
+
+      // Return to generator resets back to Home view
+      const returnHomeBtn = screen.getAllByTestId('return-to-generator-btn')[0];
+      fireEvent.click(returnHomeBtn);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('generate-button')).toBeInTheDocument();
+      });
+    });
+
+    it('handles report generation failure with a retry button', async () => {
+      let attempts = 0;
+
+      global.fetch = vi.fn((url, options) => {
+        if (url.includes('/api/scenarios/generate')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scenario: {
+                scenarioId: 'scen-fail-retry',
+                channel: 'email',
+                title: 'Email Retry Test',
+                emailData: {
+                  id: 'm-retry',
+                  isTarget: true,
+                  sender: { name: 'IT Admin', email: 'it@domain.org' },
+                  subject: 'Notice',
+                  contentBlocks: [{ type: 'paragraph', text: 'Important update.' }]
+                }
+              }
+            })
+          });
+        }
+        if (url.includes('/api/sessions') && !url.includes('/status') && !url.includes('/score') && !url.includes('/report')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({
+              success: true,
+              sessionId: 'sess-fail-retry-222',
+              session: { sessionId: 'sess-fail-retry-222', status: 'active', channel: 'email' }
+            })
+          });
+        }
+        if (url.includes('/api/events')) {
+          return Promise.resolve({ ok: true, json: async () => ({ success: true }) });
+        }
+        if (url.includes('/api/sessions/sess-fail-retry-222/status')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              session: { sessionId: 'sess-fail-retry-222', status: 'completed' }
+            })
+          });
+        }
+        if (url.includes('/api/sessions/sess-fail-retry-222/score')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scoreRecord: { score: 70, riskLevel: 'moderate', revision: 1 }
+            })
+          });
+        }
+        if (url.includes('/api/sessions/sess-fail-retry-222/report')) {
+          attempts++;
+          if (attempts === 1) {
+            return Promise.resolve({
+              ok: false,
+              status: 502,
+              json: async () => ({ success: false, error: 'Groq provider rate limit' })
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              report: {
+                sessionId: 'sess-fail-retry-222',
+                score: 70,
+                riskLevel: 'moderate',
+                summary: 'Report generated on retry successfully.',
+                strengths: [],
+                riskyBehaviors: [],
+                threatIndicators: [],
+                recommendations: ['Stay alert in enterprise chats.'],
+                keyEvents: []
+              }
+            })
+          });
+        }
+        return Promise.reject(new Error(`Unhandled URL: ${url}`));
+      });
+
+      render(<App />);
+
+      fireEvent.change(screen.getByTestId('prompt-input'), {
+        target: { value: 'Test retry flow' }
+      });
+      fireEvent.click(screen.getByTestId('generate-button'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Email Retry Test')).toBeInTheDocument();
+      });
+
+      // Complete simulation (open email & report)
+      fireEvent.click(screen.getByText('Notice'));
+      fireEvent.click(screen.getByTitle('Report phishing or spam'));
+      fireEvent.click(screen.getByLabelText(/Suspicious Sender Address or Domain/i));
+      fireEvent.click(screen.getByText('Confirm & Report Threat'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('view-report-btn')).toBeInTheDocument();
+      });
+
+      // Open report - first attempt failed
+      fireEvent.click(screen.getByTestId('view-report-btn'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('report-error-state')).toBeInTheDocument();
+        expect(screen.getByText(/Groq provider rate limit/i)).toBeInTheDocument();
+      });
+
+      // Click retry
+      fireEvent.click(screen.getByTestId('retry-report-btn'));
+
+      // Succeeds on retry
+      await waitFor(() => {
+        expect(screen.getByTestId('report-view')).toBeInTheDocument();
+        expect(screen.getByText('Report generated on retry successfully.')).toBeInTheDocument();
+      });
+    });
+  });
 });

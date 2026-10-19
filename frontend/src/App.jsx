@@ -14,8 +14,10 @@ import {
   ArrowLeft,
   CheckCircle2,
   AlertTriangle,
-  Clock
+  Clock,
+  FileText
 } from 'lucide-react';
+import AwarenessReportView from './components/report/AwarenessReportView';
 import { sendTelemetryEvent } from './services/telemetryService';
 
 /**
@@ -69,6 +71,13 @@ export default function App() {
   const [behaviorScore, setBehaviorScore] = useState(null);
   const scoreRequestedRef = useRef(false);
 
+  // Awareness & Remediation Report state (Step 4)
+  const [awarenessReport, setAwarenessReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState(null);
+  const [reportIsStale, setReportIsStale] = useState(false);
+  const reportRequestedRef = useRef(false);
+
   const sampleScenariosByChannel = {
     email: sampleScenario,
     chat: sampleChatScenario,
@@ -82,7 +91,12 @@ export default function App() {
     setSessionStatus('active');
     terminalStatusRef.current = null;
     scoreRequestedRef.current = false;
+    reportRequestedRef.current = false;
     setBehaviorScore(null);
+    setAwarenessReport(null);
+    setReportLoading(false);
+    setReportError(null);
+    setReportIsStale(false);
     setSessionSyncError(null);
     setGenerationMeta(meta || null);
 
@@ -165,8 +179,14 @@ export default function App() {
             }
           });
           const scoreData = await scoreRes.json();
-          if (scoreRes.ok && scoreData.success && scoreData.scoreRecord) {
-            setBehaviorScore(scoreData.scoreRecord);
+          const scoreObj = scoreData.scoreRecord || scoreData.score;
+          if (scoreRes.ok && scoreData.success && scoreObj) {
+            setBehaviorScore(scoreObj);
+            // Background prefetch for awareness report
+            if (!reportRequestedRef.current) {
+              reportRequestedRef.current = true;
+              fetchOrGenerateReport(currentSessionId, false).catch(() => {});
+            }
           } else {
             console.warn('[Session Scoring Warning]:', scoreData.error || 'Failed to calculate behavior score');
           }
@@ -177,6 +197,56 @@ export default function App() {
     } catch (err) {
       console.error('[Session Network Error]:', err);
       setSessionSyncError(`Network failure: could not record session status on backend (${err.message}).`);
+    }
+  };
+
+  /**
+   * Generates or fetches awareness report from backend.
+   */
+  const fetchOrGenerateReport = async (sessionId, forceRetry = false) => {
+    if (!sessionId) return;
+    if (reportLoading && !forceRetry) return;
+
+    setReportLoading(true);
+    setReportError(null);
+
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/report`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          scenarioMeta: {
+            title: currentScenario?.title,
+            category: currentScenario?.category
+          }
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        const errorMsg = data.error || `Report generation failed (HTTP ${response.status})`;
+        console.error('[Awareness Report Error]:', errorMsg);
+        setReportError(errorMsg);
+        setReportLoading(false);
+        return;
+      }
+
+      setAwarenessReport(data.report);
+      setReportIsStale(false);
+      setReportLoading(false);
+    } catch (err) {
+      console.error('[Awareness Report Network Error]:', err);
+      setReportError(`Network failure while generating report (${err.message}).`);
+      setReportLoading(false);
+    }
+  };
+
+  const handleOpenReport = () => {
+    setActiveView('report');
+    if (!awarenessReport && !reportError && currentSessionId && !reportLoading) {
+      fetchOrGenerateReport(currentSessionId);
     }
   };
 
@@ -207,7 +277,12 @@ export default function App() {
     setShowEventLog(false);
     setSessionSyncError(null);
     setBehaviorScore(null);
+    setAwarenessReport(null);
+    setReportLoading(false);
+    setReportError(null);
+    setReportIsStale(false);
     scoreRequestedRef.current = false;
+    reportRequestedRef.current = false;
   };
 
   const clearEvents = () => {
@@ -220,6 +295,26 @@ export default function App() {
         onGenerateScenario={handleScenarioGenerated}
         initialPrompt={savedPrompt}
         initialChannel={savedChannel}
+      />
+    );
+  }
+
+  if (activeView === 'report') {
+    return (
+      <AwarenessReportView
+        report={awarenessReport}
+        score={behaviorScore}
+        session={{
+          sessionId: currentSessionId,
+          status: sessionStatus,
+          channel: currentScenario?.channel || savedChannel
+        }}
+        loading={reportLoading}
+        error={reportError}
+        isStale={reportIsStale}
+        onRetry={() => fetchOrGenerateReport(currentSessionId, true)}
+        onReturnToGenerator={handleReturnToGenerator}
+        onBackToSimulation={() => setActiveView('simulation')}
       />
     );
   }
@@ -293,6 +388,18 @@ export default function App() {
               <Shield className="w-3 h-3 text-emerald-400" />
               <span>Score: {behaviorScore.score}/100 ({behaviorScore.riskLevel})</span>
             </div>
+          )}
+
+          {/* View Awareness Report Button (Step 4) */}
+          {sessionStatus !== 'active' && (
+            <button
+              onClick={handleOpenReport}
+              data-testid="view-report-btn"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-sm transition-all cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>View Awareness Report</span>
+            </button>
           )}
 
           {/* Session Sync Error Notice */}

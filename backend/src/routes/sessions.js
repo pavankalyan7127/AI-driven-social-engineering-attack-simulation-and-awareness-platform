@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import Session, { ALLOWED_CHANNELS, ALLOWED_TERMINAL_STATUSES } from '../models/Session.js';
 import SimulationEvent from '../models/SimulationEvent.js';
 import { scoreSession, getScoreForSession } from '../services/scoringService.js';
+import { generateAwarenessReport, getAwarenessReport } from '../services/awarenessReportService.js';
 
 const router = express.Router();
 
@@ -253,7 +254,8 @@ router.post('/:sessionId/score', async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      score
+      score,
+      scoreRecord: score
     });
   } catch (err) {
     next(err);
@@ -279,7 +281,69 @@ router.get('/:sessionId/score', async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      score
+      score,
+      scoreRecord: score
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/sessions/:sessionId/report
+ * Generates or retrieves the AI Awareness and Remediation Report for a completed, scored session.
+ * Reuses existing report if score revision and report version match.
+ */
+router.post('/:sessionId/report', async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+    const { scenarioMeta } = req.body || {};
+
+    if (!sessionId || !SESSION_ID_REGEX.test(sessionId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid sessionId format.'
+      });
+    }
+
+    const { report, cached } = await generateAwarenessReport({
+      sessionId,
+      scenarioMeta
+    });
+
+    return res.status(200).json({
+      success: true,
+      sessionId,
+      cached,
+      report
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/sessions/:sessionId/report
+ * Retrieves the stored awareness report for a session without calling Groq.
+ */
+router.get('/:sessionId/report', async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+
+    if (!sessionId || !SESSION_ID_REGEX.test(sessionId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid sessionId format.'
+      });
+    }
+
+    const { report, isStale } = await getAwarenessReport(sessionId);
+
+    return res.status(200).json({
+      success: true,
+      sessionId,
+      isStale,
+      report
     });
   } catch (err) {
     next(err);
