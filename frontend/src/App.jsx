@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import EmailSimulation from './components/simulation/EmailSimulation';
 import ChatSimulation from './components/simulation/ChatSimulation';
+import SmsSimulation from './components/simulation/SmsSimulation';
 import { sampleScenario } from './data/sampleScenario';
 import { sampleChatScenario } from './data/sampleChatScenario';
-import { Activity, Terminal, Shield, Smartphone, Monitor, Mail, MessageSquare } from 'lucide-react';
+import { sampleSmsScenario } from './data/sampleSmsScenario';
+import { Activity, Terminal, Shield, Smartphone, Monitor, Mail, MessageSquare, MessageCircle } from 'lucide-react';
 
 export default function App() {
-  const [activeChannel, setActiveChannel] = useState('chat'); // 'chat' or 'email'
+  const [activeChannel, setActiveChannel] = useState('sms'); // 'sms', 'chat', or 'email'
   const [events, setEvents] = useState([]);
   const [showEventLog, setShowEventLog] = useState(false);
   const [simulationCompletedData, setSimulationCompletedData] = useState(null);
@@ -66,6 +68,20 @@ export default function App() {
               <MessageSquare className="w-3 h-3" />
               <span>Chat</span>
             </button>
+            <button
+              onClick={() => {
+                setActiveChannel('sms');
+                setSimulationCompletedData(null);
+              }}
+              className={`flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                activeChannel === 'sms'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Smartphone className="w-3 h-3" />
+              <span>SMS</span>
+            </button>
           </div>
         </div>
 
@@ -108,17 +124,26 @@ export default function App() {
               : 'w-full'
           }`}
         >
-          {activeChannel === 'email' ? (
+          {activeChannel === 'email' && (
             <EmailSimulation
               scenario={sampleScenario}
               sessionId="sess-sim-88392"
               onAction={handleAction}
               onComplete={handleComplete}
             />
-          ) : (
+          )}
+          {activeChannel === 'chat' && (
             <ChatSimulation
               scenario={sampleChatScenario}
               sessionId="sess-chat-sim-9912"
+              onAction={handleAction}
+              onComplete={handleComplete}
+            />
+          )}
+          {activeChannel === 'sms' && (
+            <SmsSimulation
+              scenario={sampleSmsScenario}
+              sessionId="sess-sms-sim-7731"
               onAction={handleAction}
               onComplete={handleComplete}
             />
@@ -152,7 +177,7 @@ export default function App() {
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
               {events.length === 0 ? (
                 <div className="text-gray-500 italic text-center py-6">
-                  No interactions captured yet. Interact with the chat or email interface.
+                  No interactions captured yet. Interact with the simulation interface.
                 </div>
               ) : (
                 events.map((evt, idx) => (
