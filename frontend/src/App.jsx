@@ -1,8 +1,5 @@
 import React, { useState } from 'react';
-import EmailSimulation from './components/simulation/EmailSimulation';
-import ChatSimulation from './components/simulation/ChatSimulation';
-import SmsSimulation from './components/simulation/SmsSimulation';
-import WebsiteSimulation from './components/simulation/WebsiteSimulation';
+import SimulationRenderer from './components/simulation/SimulationRenderer';
 import { sampleScenario } from './data/sampleScenario';
 import { sampleChatScenario } from './data/sampleChatScenario';
 import { sampleSmsScenario } from './data/sampleSmsScenario';
@@ -10,11 +7,20 @@ import { sampleWebsiteScenario } from './data/sampleWebsiteScenario';
 import { Activity, Terminal, Shield, Smartphone, Monitor, Mail, MessageSquare, Globe } from 'lucide-react';
 
 export default function App() {
-  const [activeChannel, setActiveChannel] = useState('website'); // 'website', 'sms', 'chat', or 'email'
+  const [activeChannel, setActiveChannel] = useState('email'); // 'email', 'chat', 'sms', 'website'
   const [events, setEvents] = useState([]);
   const [showEventLog, setShowEventLog] = useState(false);
   const [simulationCompletedData, setSimulationCompletedData] = useState(null);
   const [deviceWidthMode, setDeviceWidthMode] = useState('full'); // 'full' or 'mobile'
+
+  const scenariosByChannel = {
+    email: sampleScenario,
+    chat: sampleChatScenario,
+    sms: sampleSmsScenario,
+    website: sampleWebsiteScenario
+  };
+
+  const currentScenario = scenariosByChannel[activeChannel] || sampleScenario;
 
   const handleAction = (event) => {
     console.log('[Simulation Event Dispatched]:', event);
@@ -131,7 +137,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Main Container rendering active simulation component */}
+      {/* Main Container rendering active simulation through SimulationRenderer */}
       <div className="flex-1 overflow-hidden relative flex items-center justify-center bg-gray-900">
         <div
           className={`h-full transition-all duration-300 ${
@@ -140,38 +146,12 @@ export default function App() {
               : 'w-full'
           }`}
         >
-          {activeChannel === 'email' && (
-            <EmailSimulation
-              scenario={sampleScenario}
-              sessionId="sess-sim-88392"
-              onAction={handleAction}
-              onComplete={handleComplete}
-            />
-          )}
-          {activeChannel === 'chat' && (
-            <ChatSimulation
-              scenario={sampleChatScenario}
-              sessionId="sess-chat-sim-9912"
-              onAction={handleAction}
-              onComplete={handleComplete}
-            />
-          )}
-          {activeChannel === 'sms' && (
-            <SmsSimulation
-              scenario={sampleSmsScenario}
-              sessionId="sess-sms-sim-7731"
-              onAction={handleAction}
-              onComplete={handleComplete}
-            />
-          )}
-          {activeChannel === 'website' && (
-            <WebsiteSimulation
-              scenario={sampleWebsiteScenario}
-              sessionId="sess-web-sim-6621"
-              onAction={handleAction}
-              onComplete={handleComplete}
-            />
-          )}
+          <SimulationRenderer
+            scenario={currentScenario}
+            sessionId={`sess-${activeChannel}-demo`}
+            onAction={handleAction}
+            onComplete={handleComplete}
+          />
         </div>
 
         {/* Live Event Inspector Overlay */}
