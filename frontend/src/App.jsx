@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import Home from './pages/Home';
 import SimulationRenderer from './components/simulation/SimulationRenderer';
 import { sampleScenario } from './data/sampleScenario';
@@ -11,18 +11,44 @@ import {
   Shield,
   Smartphone,
   Monitor,
-  Mail,
-  MessageSquare,
-  Globe,
   ArrowLeft,
   CheckCircle2,
-  AlertCircle
+  AlertTriangle,
+  Clock
 } from 'lucide-react';
+
+/**
+ * Maps channel-specific completion payloads to standardized session lifecycle statuses.
+ * - Threat reported ('threat_reported', 'reported') -> 'reported'
+ * - Safe exit ('safe_exit') -> 'safe_exit'
+ * - Explicit abandonment ('abandoned') -> 'abandoned'
+ * - Default -> 'completed'
+ */
+export function mapOutcomeToSessionStatus(result) {
+  if (!result || typeof result !== 'object') return 'completed';
+
+  const statusStr = (result.status || '').toLowerCase();
+  const actionStr = (result.action || '').toLowerCase();
+
+  if (statusStr === 'reported' || actionStr === 'threat_reported') {
+    return 'reported';
+  }
+  if (statusStr === 'safe_exit' || actionStr === 'safe_exit') {
+    return 'safe_exit';
+  }
+  if (statusStr === 'abandoned' || actionStr === 'abandoned') {
+    return 'abandoned';
+  }
+
+  return 'completed';
+}
 
 export default function App() {
   const [activeView, setActiveView] = useState('home'); // 'home' | 'simulation'
   const [currentScenario, setCurrentScenario] = useState(sampleScenario);
-  const [currentSessionId, setCurrentSessionId] = useState('sess-demo-1');
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [sessionStatus, setSessionStatus] = useState('active'); // 'active' | 'completed' | 'reported' | 'safe_exit' | 'abandoned'
+  const [sessionSyncError, setSessionSyncError] = useState(null);
   const [generationMeta, setGenerationMeta] = useState(null);
 
   // Home state preservation
@@ -35,6 +61,9 @@ export default function App() {
   const [simulationCompletedData, setSimulationCompletedData] = useState(null);
   const [deviceWidthMode, setDeviceWidthMode] = useState('full'); // 'full' | 'mobile'
 
+  // Ref to guard against duplicate completion callbacks firing concurrently
+  const terminalStatusRef = useRef(null);
+
   const sampleScenariosByChannel = {
     email: sampleScenario,
     chat: sampleChatScenario,
@@ -44,10 +73,15 @@ export default function App() {
 
   const handleScenarioGenerated = (scenario, sessionId, meta) => {
     setCurrentScenario(scenario);
-    setCurrentSessionId(sessionId || `sess-${scenario?.channel || 'gen'}-${Date.now()}`);
+    setCurrentSessionId(sessionId);
+    setSessionStatus('active');
+    terminalStatusRef.current = null;
+    setSessionSyncError(null);
     setGenerationMeta(meta || null);
+
     if (meta?.prompt) setSavedPrompt(meta.prompt);
     if (meta?.channel) setSavedChannel(meta.channel);
+
     setSimulationCompletedData(null);
     setEvents([]);
     setActiveView('simulation');
@@ -58,29 +92,84 @@ export default function App() {
     setEvents((prev) => [event, ...prev]);
   };
 
-  const handleComplete = (result) => {
+  /**
+   * Terminal completion handler:
+   * Maps outcome to lifecycle status and updates backend session atomically via PATCH /api/sessions/:id/status.
+   * Prevents duplicate or conflicting updates.
+   */
+  const handleComplete = async (result) => {
     console.log('[Simulation Finalized]:', result);
-    setSimulationCompletedData(result);
+
+    const targetStatus = mapOutcomeToSessionStatus(result);
+
+    // Guard: If already finalized, do not trigger conflicting or duplicate updates
+    if (terminalStatusRef.current) {
+      if (terminalStatusRef.current === targetStatus) {
+        console.log(`[Session Lifecycle] Session ${currentSessionId} already marked as ${targetStatus} (ignoring duplicate).`);
+        return;
+      }
+      console.warn(`[Session Lifecycle] Cannot transition from terminal state ${terminalStatusRef.current} to ${targetStatus}.`);
+      return;
+    }
+
+    terminalStatusRef.current = targetStatus;
+
+    if (!currentSessionId) {
+      setSimulationCompletedData(result);
+      setSessionStatus(targetStatus);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/sessions/${currentSessionId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ status: targetStatus })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        const errorMsg = data.error || `Status update failed with HTTP ${response.status}`;
+        console.error('[Session Status Sync Error]:', errorMsg);
+        setSessionSyncError(errorMsg);
+        // Do not pretend backend update succeeded if it failed
+        return;
+      }
+
+      setSessionStatus(data.session?.status || targetStatus);
+      setSimulationCompletedData({
+        ...result,
+        session: data.session,
+        backendStatus: data.session?.status || targetStatus
+      });
+      setSessionSyncError(null);
+    } catch (err) {
+      console.error('[Session Network Error]:', err);
+      setSessionSyncError(`Network failure: could not record session status on backend (${err.message}).`);
+    }
   };
 
-  const handleReturnToGenerator = () => {
+  const handleReturnToGenerator = async () => {
+    // If returning while session is still active, mark as abandoned
+    if (currentSessionId && sessionStatus === 'active' && !terminalStatusRef.current) {
+      try {
+        terminalStatusRef.current = 'abandoned';
+        await fetch(`/api/sessions/${currentSessionId}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'abandoned' })
+        });
+      } catch (err) {
+        console.warn('[Session Abandon Sync Error]:', err);
+      }
+    }
+
     setActiveView('home');
     setShowEventLog(false);
-  };
-
-  const handleLoadSampleScenario = (channel) => {
-    const sample = sampleScenariosByChannel[channel] || sampleScenario;
-    setCurrentScenario(sample);
-    setCurrentSessionId(`sess-${channel}-sample`);
-    setSavedChannel(channel);
-    setGenerationMeta({
-      prompt: `Sample ${channel} scenario preview`,
-      channel,
-      modelUsed: 'sample-predefined'
-    });
-    setSimulationCompletedData(null);
-    setEvents([]);
-    setActiveView('simulation');
+    setSessionSyncError(null);
   };
 
   const clearEvents = () => {
@@ -106,7 +195,7 @@ export default function App() {
           <button
             onClick={handleReturnToGenerator}
             data-testid="return-to-generator-btn"
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-900 hover:bg-gray-800 text-gray-200 border border-gray-700 transition-colors font-medium text-xs shadow-sm"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-900 hover:bg-gray-800 text-gray-200 border border-gray-700 transition-colors font-medium text-xs shadow-sm cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5 text-blue-400" />
             <span>Return to Generator</span>
@@ -126,17 +215,42 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Completed Indicator */}
-          {simulationCompletedData && (
-            <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800 text-[11px] text-emerald-300">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>
-                Outcome: {simulationCompletedData?.outcome || simulationCompletedData?.result?.outcome || 'Completed'}
-              </span>
+          {/* Session Status Indicator */}
+          <div
+            data-testid="session-status-badge"
+            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase border ${
+              sessionStatus === 'active'
+                ? 'bg-blue-950/80 border-blue-800 text-blue-300'
+                : sessionStatus === 'reported'
+                ? 'bg-emerald-950/80 border-emerald-800 text-emerald-300'
+                : sessionStatus === 'safe_exit'
+                ? 'bg-cyan-950/80 border-cyan-800 text-cyan-300'
+                : sessionStatus === 'abandoned'
+                ? 'bg-gray-800 border-gray-700 text-gray-400'
+                : 'bg-purple-950/80 border-purple-800 text-purple-300'
+            }`}
+          >
+            {sessionStatus === 'active' ? (
+              <Clock className="w-3 h-3 text-blue-400 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+            )}
+            <span>Status: {sessionStatus}</span>
+          </div>
+
+          {/* Session Sync Error Notice */}
+          {sessionSyncError && (
+            <div
+              data-testid="session-sync-error"
+              className="hidden lg:flex items-center gap-1 px-2 py-0.5 rounded bg-red-950/80 border border-red-800 text-[11px] text-red-300"
+              title={sessionSyncError}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+              <span className="truncate max-w-[180px]">{sessionSyncError}</span>
             </div>
           )}
 
-          {/* Responsive test toggle */}
+          {/* Responsive Viewport Toggle */}
           <div className="flex items-center bg-gray-800 rounded-lg p-0.5 border border-gray-700">
             <button
               onClick={() => setDeviceWidthMode('full')}
@@ -177,7 +291,7 @@ export default function App() {
         >
           <SimulationRenderer
             scenario={currentScenario}
-            sessionId={currentSessionId}
+            sessionId={currentSessionId || 'sess-default'}
             onAction={handleAction}
             onComplete={handleComplete}
           />

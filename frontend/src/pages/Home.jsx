@@ -171,13 +171,33 @@ export default function Home({
         throw new Error(errText);
       }
 
-      // Hand off generated scenario to parent callback
+      // Initialize and persist simulation session in MongoDB
+      const scenarioId = data.scenario?.scenarioId || data.scenario?.id || `scen-${selectedChannel}-${Date.now()}`;
+      const channel = data.scenario?.channel || selectedChannel;
+
+      const sessionResponse = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ scenarioId, channel })
+      });
+
+      const sessionData = await sessionResponse.json();
+
+      if (!sessionResponse.ok || !sessionData.success) {
+        const sessionErrText = sessionData.error || `Session creation failed with status ${sessionResponse.status}`;
+        throw new Error(sessionErrText);
+      }
+
+      // Hand off generated scenario and backend-generated sessionId to parent callback
       if (onGenerateScenario) {
-        onGenerateScenario(data.scenario, data.sessionId, {
+        onGenerateScenario(data.scenario, sessionData.sessionId, {
           modelUsed: data.modelUsed,
           imageAnalysis: data.imageAnalysis,
           prompt: trimmedPrompt,
-          channel: selectedChannel
+          channel: selectedChannel,
+          session: sessionData.session
         });
       }
     } catch (err) {

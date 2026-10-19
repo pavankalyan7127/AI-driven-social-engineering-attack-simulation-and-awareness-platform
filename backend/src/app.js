@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import scenariosRouter from './routes/scenarios.js';
+import sessionsRouter from './routes/sessions.js';
 
 dotenv.config();
 
@@ -17,8 +18,9 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Scenarios API routes
+// API routes
 app.use('/api/scenarios', scenariosRouter);
+app.use('/api/sessions', sessionsRouter);
 
 // 404 Handler
 app.use((req, res) => {

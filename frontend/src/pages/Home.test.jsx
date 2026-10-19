@@ -203,4 +203,46 @@ describe('Home Page Component', () => {
     const smsBtn = screen.getByTestId('channel-sms');
     expect(smsBtn).toHaveClass('border-blue-500');
   });
+
+  // Test 11: Preventing simulation launch when session creation fails
+  it('prevents simulation launch and shows error when backend session creation fails', async () => {
+    global.fetch = vi.fn((url) => {
+      if (url.includes('/api/scenarios/generate')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            scenario: { scenarioId: 'scen-999', channel: 'email', title: 'Test Phish' }
+          })
+        });
+      }
+      if (url.includes('/api/sessions')) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: async () => ({
+            success: false,
+            error: 'Database connection failed: MONGODB_URL is unavailable'
+          })
+        });
+      }
+      return Promise.reject(new Error(`Unhandled URL: ${url}`));
+    });
+
+    render(<Home onGenerateScenario={mockOnGenerateScenario} />);
+    const promptInput = screen.getByTestId('prompt-input');
+    const userPrompt = 'Simulate malicious payload email';
+
+    fireEvent.change(promptInput, { target: { value: userPrompt } });
+    fireEvent.click(screen.getByTestId('generate-button'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('error-banner')).toBeInTheDocument();
+      expect(screen.getByText(/Database connection failed/i)).toBeInTheDocument();
+    });
+
+    // Verification: onGenerateScenario was NOT called, preserving user input
+    expect(mockOnGenerateScenario).not.toHaveBeenCalled();
+    expect(promptInput.value).toBe(userPrompt);
+  });
 });
