@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import EmailSimulation from './components/simulation/EmailSimulation';
 import ChatSimulation from './components/simulation/ChatSimulation';
 import SmsSimulation from './components/simulation/SmsSimulation';
+import WebsiteSimulation from './components/simulation/WebsiteSimulation';
 import { sampleScenario } from './data/sampleScenario';
 import { sampleChatScenario } from './data/sampleChatScenario';
 import { sampleSmsScenario } from './data/sampleSmsScenario';
-import { Activity, Terminal, Shield, Smartphone, Monitor, Mail, MessageSquare, MessageCircle } from 'lucide-react';
+import { sampleWebsiteScenario } from './data/sampleWebsiteScenario';
+import { Activity, Terminal, Shield, Smartphone, Monitor, Mail, MessageSquare, Globe } from 'lucide-react';
 
 export default function App() {
-  const [activeChannel, setActiveChannel] = useState('sms'); // 'sms', 'chat', or 'email'
+  const [activeChannel, setActiveChannel] = useState('website'); // 'website', 'sms', 'chat', or 'email'
   const [events, setEvents] = useState([]);
   const [showEventLog, setShowEventLog] = useState(false);
   const [simulationCompletedData, setSimulationCompletedData] = useState(null);
@@ -82,6 +84,20 @@ export default function App() {
               <Smartphone className="w-3 h-3" />
               <span>SMS</span>
             </button>
+            <button
+              onClick={() => {
+                setActiveChannel('website');
+                setSimulationCompletedData(null);
+              }}
+              className={`flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                activeChannel === 'website'
+                  ? 'bg-purple-600 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Globe className="w-3 h-3" />
+              <span>Website</span>
+            </button>
           </div>
         </div>
 
@@ -144,6 +160,14 @@ export default function App() {
             <SmsSimulation
               scenario={sampleSmsScenario}
               sessionId="sess-sms-sim-7731"
+              onAction={handleAction}
+              onComplete={handleComplete}
+            />
+          )}
+          {activeChannel === 'website' && (
+            <WebsiteSimulation
+              scenario={sampleWebsiteScenario}
+              sessionId="sess-web-sim-6621"
               onAction={handleAction}
               onComplete={handleComplete}
             />
