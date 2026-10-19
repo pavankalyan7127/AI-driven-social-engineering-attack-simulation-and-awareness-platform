@@ -49,11 +49,13 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Database & local data storage
-data/
+/data/
 dump/
 *.sqlite
 *.sqlite3
 mongo-data/
+!src/data/
+!*/src/data/
 
 # Testing & Coverage
 coverage/
