@@ -510,4 +510,199 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
       });
     });
   });
+
+  describe('Security Behavior Scoring Integration in App (Step 3)', () => {
+    it('calculates and displays security behavior score upon successful terminal completion', async () => {
+      let scoreRequested = false;
+
+      global.fetch = vi.fn((url, options) => {
+        if (url.includes('/api/scenarios/generate')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scenario: {
+                scenarioId: 'scen-scoring-demo',
+                channel: 'email',
+                title: 'Security Scoring Demo Email',
+                emailData: {
+                  id: 'm-target-score',
+                  isTarget: true,
+                  sender: { name: 'IT Admin', email: 'admin@alert-system.org' },
+                  subject: 'Urgent System Alert',
+                  contentBlocks: [{ type: 'paragraph', text: 'Suspicious activity detected.' }]
+                }
+              }
+            })
+          });
+        }
+        if (url.includes('/api/sessions') && !url.includes('/status') && !url.includes('/score')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({
+              success: true,
+              sessionId: 'sess-scoring-12345',
+              session: { sessionId: 'sess-scoring-12345', status: 'active' }
+            })
+          });
+        }
+        if (url.includes('/api/events')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({ success: true, event: { eventId: 'evt-s1' } })
+          });
+        }
+        if (url.includes('/api/sessions/sess-scoring-12345/status')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              session: { sessionId: 'sess-scoring-12345', status: 'reported' }
+            })
+          });
+        }
+        if (url.includes('/api/sessions/sess-scoring-12345/score') && options?.method === 'POST') {
+          scoreRequested = true;
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scoreRecord: {
+                sessionId: 'sess-scoring-12345',
+                score: 95,
+                riskLevel: 'low',
+                scoringVersion: '1.0.0',
+                status: 'final'
+              }
+            })
+          });
+        }
+        return Promise.reject(new Error(`Unhandled URL: ${url}`));
+      });
+
+      render(<App />);
+
+      fireEvent.change(screen.getByTestId('prompt-input'), {
+        target: { value: 'Demonstrate scoring calculation' }
+      });
+      fireEvent.click(screen.getByTestId('generate-button'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Security Scoring Demo Email')).toBeInTheDocument();
+      });
+
+      // Initially no score badge
+      expect(screen.queryByTestId('behavior-score-badge')).not.toBeInTheDocument();
+
+      // Open email
+      fireEvent.click(screen.getByText('Urgent System Alert'));
+
+      // Report threat
+      const reportButton = screen.getByTitle('Report phishing or spam');
+      fireEvent.click(reportButton);
+
+      const senderCheckbox = screen.getByLabelText(/Suspicious Sender Address or Domain/i);
+      fireEvent.click(senderCheckbox);
+
+      const confirmButton = screen.getByText('Confirm & Report Threat');
+      fireEvent.click(confirmButton);
+
+      // Verify scoring calculation is called and badge renders
+      await waitFor(() => {
+        expect(scoreRequested).toBe(true);
+        const scoreBadge = screen.getByTestId('behavior-score-badge');
+        expect(scoreBadge).toBeInTheDocument();
+        expect(scoreBadge).toHaveTextContent(/Score: 95\/100 \(low\)/i);
+      });
+
+      // Return to generator clears the scoring badge
+      fireEvent.click(screen.getByTestId('return-to-generator-btn'));
+      await waitFor(() => {
+        expect(screen.getByTestId('generate-button')).toBeInTheDocument();
+      });
+    });
+
+    it('does not trigger scoring calculation if status update fails', async () => {
+      let scoreRequested = false;
+
+      global.fetch = vi.fn((url, options) => {
+        if (url.includes('/api/scenarios/generate')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scenario: {
+                scenarioId: 'scen-score-fail',
+                channel: 'email',
+                title: 'Fail Status Phish',
+                emailData: {
+                  id: 'm-fail',
+                  isTarget: true,
+                  sender: { name: 'Admin', email: 'admin@alert.org' },
+                  subject: 'Notice',
+                  contentBlocks: [{ type: 'paragraph', text: 'Content.' }]
+                }
+              }
+            })
+          });
+        }
+        if (url.includes('/api/sessions') && !url.includes('/status') && !url.includes('/score')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              sessionId: 'sess-fail-scoring',
+              session: { sessionId: 'sess-fail-scoring', status: 'active' }
+            })
+          });
+        }
+        if (url.includes('/api/events')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ success: true })
+          });
+        }
+        if (url.includes('/api/sessions/sess-fail-scoring/status')) {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            json: async () => ({ success: false, error: 'Database transaction error' })
+          });
+        }
+        if (url.includes('/api/sessions/sess-fail-scoring/score')) {
+          scoreRequested = true;
+          return Promise.resolve({ ok: true, json: async () => ({ success: true }) });
+        }
+        return Promise.reject(new Error(`Unhandled URL: ${url}`));
+      });
+
+      render(<App />);
+
+      fireEvent.change(screen.getByTestId('prompt-input'), {
+        target: { value: 'Scoring fail test' }
+      });
+      fireEvent.click(screen.getByTestId('generate-button'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Fail Status Phish')).toBeInTheDocument();
+      });
+
+      // Open email & report
+      fireEvent.click(screen.getByText('Notice'));
+      fireEvent.click(screen.getByTitle('Report phishing or spam'));
+      fireEvent.click(screen.getByLabelText(/Suspicious Sender Address or Domain/i));
+      fireEvent.click(screen.getByText('Confirm & Report Threat'));
+
+      // Status error shows
+      await waitFor(() => {
+        expect(screen.getByTestId('session-sync-error')).toBeInTheDocument();
+      });
+
+      // Scoring endpoint must NOT have been called
+      expect(scoreRequested).toBe(false);
+      expect(screen.queryByTestId('behavior-score-badge')).not.toBeInTheDocument();
+    });
+  });
 });

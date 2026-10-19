@@ -65,6 +65,10 @@ export default function App() {
   // Ref to guard against duplicate completion callbacks firing concurrently
   const terminalStatusRef = useRef(null);
 
+  // Security behavior scoring state (Step 3)
+  const [behaviorScore, setBehaviorScore] = useState(null);
+  const scoreRequestedRef = useRef(false);
+
   const sampleScenariosByChannel = {
     email: sampleScenario,
     chat: sampleChatScenario,
@@ -77,6 +81,8 @@ export default function App() {
     setCurrentSessionId(sessionId);
     setSessionStatus('active');
     terminalStatusRef.current = null;
+    scoreRequestedRef.current = false;
+    setBehaviorScore(null);
     setSessionSyncError(null);
     setGenerationMeta(meta || null);
 
@@ -147,6 +153,27 @@ export default function App() {
         backendStatus: data.session?.status || targetStatus
       });
       setSessionSyncError(null);
+
+      // Trigger deterministic security scoring calculation after successful status synchronization
+      if (currentSessionId && !scoreRequestedRef.current) {
+        scoreRequestedRef.current = true;
+        try {
+          const scoreRes = await fetch(`/api/sessions/${currentSessionId}/score`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+          const scoreData = await scoreRes.json();
+          if (scoreRes.ok && scoreData.success && scoreData.scoreRecord) {
+            setBehaviorScore(scoreData.scoreRecord);
+          } else {
+            console.warn('[Session Scoring Warning]:', scoreData.error || 'Failed to calculate behavior score');
+          }
+        } catch (scoreErr) {
+          console.error('[Session Scoring Error]:', scoreErr);
+        }
+      }
     } catch (err) {
       console.error('[Session Network Error]:', err);
       setSessionSyncError(`Network failure: could not record session status on backend (${err.message}).`);
@@ -179,6 +206,8 @@ export default function App() {
     setActiveView('home');
     setShowEventLog(false);
     setSessionSyncError(null);
+    setBehaviorScore(null);
+    scoreRequestedRef.current = false;
   };
 
   const clearEvents = () => {
@@ -246,6 +275,25 @@ export default function App() {
             )}
             <span>Status: {sessionStatus}</span>
           </div>
+
+          {/* Behavior Score Badge (Step 3) */}
+          {behaviorScore && (
+            <div
+              data-testid="behavior-score-badge"
+              className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase border ${
+                behaviorScore.riskLevel === 'low'
+                  ? 'bg-emerald-950/80 border-emerald-800 text-emerald-300'
+                  : behaviorScore.riskLevel === 'moderate'
+                  ? 'bg-yellow-950/80 border-yellow-800 text-yellow-300'
+                  : behaviorScore.riskLevel === 'high'
+                  ? 'bg-orange-950/80 border-orange-800 text-orange-300'
+                  : 'bg-red-950/80 border-red-800 text-red-300'
+              }`}
+            >
+              <Shield className="w-3 h-3 text-emerald-400" />
+              <span>Score: {behaviorScore.score}/100 ({behaviorScore.riskLevel})</span>
+            </div>
+          )}
 
           {/* Session Sync Error Notice */}
           {sessionSyncError && (

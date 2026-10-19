@@ -2,6 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import Session, { ALLOWED_CHANNELS, ALLOWED_TERMINAL_STATUSES } from '../models/Session.js';
 import SimulationEvent from '../models/SimulationEvent.js';
+import { scoreSession, getScoreForSession } from '../services/scoringService.js';
 
 const router = express.Router();
 
@@ -227,6 +228,58 @@ router.get('/:sessionId/events', async (req, res, next) => {
       page,
       limit,
       events
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/sessions/:sessionId/score
+ * Calculates and persists the deterministic security behavior score for a session.
+ */
+router.post('/:sessionId/score', async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+
+    if (!sessionId || !SESSION_ID_REGEX.test(sessionId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid sessionId format.'
+      });
+    }
+
+    const score = await scoreSession(sessionId);
+
+    return res.status(200).json({
+      success: true,
+      score
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/sessions/:sessionId/score
+ * Retrieves the stored behavior score for a session without recomputing.
+ */
+router.get('/:sessionId/score', async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+
+    if (!sessionId || !SESSION_ID_REGEX.test(sessionId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid sessionId format.'
+      });
+    }
+
+    const score = await getScoreForSession(sessionId);
+
+    return res.status(200).json({
+      success: true,
+      score
     });
   } catch (err) {
     next(err);
