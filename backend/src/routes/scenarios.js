@@ -106,6 +106,7 @@ router.post('/generate', (req, res, next) => {
     const result = await generateScenarioWithGroq({
       prompt: trimmedPrompt,
       channel: normalizedChannel,
+      files: req.files,
       hasImages
     });
 

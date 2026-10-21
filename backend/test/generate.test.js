@@ -355,7 +355,7 @@ describe('POST /api/scenarios/generate - AI Scenario Generation', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.imageAnalysis).toBeDefined();
       expect(res.body.imageAnalysis.processed).toBe(false);
-      expect(res.body.imageAnalysis.notice).toMatch(/does not support multimodal vision/i);
+      expect(res.body.imageAnalysis.notice).toMatch(/no legible text|could not be processed/i);
     });
   });
 

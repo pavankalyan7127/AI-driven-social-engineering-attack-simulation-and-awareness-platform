@@ -98,13 +98,13 @@ describe('Home Page Component', () => {
     expect(screen.queryByText('phish-sample.png')).not.toBeInTheDocument();
   });
 
-  // Test 7: Vision model limitation banner
-  it('shows explicit vision model limitation banner', () => {
+  // Test 7: Vision model / OCR banner
+  it('shows smart OCR vision banner', () => {
     render(<Home onGenerateScenario={mockOnGenerateScenario} />);
     const notice = screen.getByTestId('vision-notice');
     expect(notice).toBeInTheDocument();
     expect(notice).toHaveTextContent(
-      'Uploaded images are for reference only. AI generation currently runs on a text-only model (openai/gpt-oss-20b) and does not analyze image content.'
+      'Smart OCR Vision Active: Upload screenshots of suspicious emails, chat messages, or fake websites. The AI will extract the text, branding, and attack tactics to build an authentic replica simulation.'
     );
   });
 

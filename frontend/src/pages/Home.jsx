@@ -309,14 +309,14 @@ export default function Home({
               </span>
             </div>
 
-            {/* Vision Model Limitation Warning Banner */}
+            {/* Vision Model / Smart OCR Banner */}
             <div
               data-testid="vision-notice"
-              className="p-3 rounded-lg bg-amber-950/30 border border-amber-800/50 flex items-start gap-2.5 text-xs text-amber-200/90 leading-relaxed"
+              className="p-3 rounded-lg bg-blue-950/30 border border-blue-800/50 flex items-start gap-2.5 text-xs text-blue-200/90 leading-relaxed"
             >
-              <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
               <span>
-                Uploaded images are for reference only. AI generation currently runs on a text-only model (openai/gpt-oss-20b) and does not analyze image content.
+                Smart OCR Vision Active: Upload screenshots of suspicious emails, chat messages, or fake websites. The AI will extract the text, branding, and attack tactics to build an authentic replica simulation.
               </span>
             </div>
 

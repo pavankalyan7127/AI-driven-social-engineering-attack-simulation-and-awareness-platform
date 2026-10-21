@@ -1,6 +1,7 @@
 import Groq from 'groq-sdk';
 import { validateScenario } from '../validators/scenarioValidator.js';
 import { ALLOWED_ATTACK_TYPES } from '../config/attackTaxonomy.js';
+import { analyzeReferenceImages } from './imageAnalysisService.js';
 
 /**
  * Builds unified system prompt instructing the model to predict the simulation channel,
@@ -333,6 +334,7 @@ export function repairAndParseScenarioJson(rawJson) {
 export async function generateScenarioWithGroq({
   prompt,
   channel = null,
+  files = [],
   hasImages = false,
   customGroqClient = null,
   isRetry = false
@@ -344,13 +346,43 @@ export async function generateScenarioWithGroq({
     throw error;
   }
 
+  // 1. Run OCR analysis on uploaded reference images if provided
+  let imageAnalysis = null;
+  const imageFiles = Array.isArray(files) ? files : [];
+  if (imageFiles.length > 0) {
+    try {
+      imageAnalysis = await analyzeReferenceImages(imageFiles);
+    } catch (analysisErr) {
+      console.warn('[Image Analysis Service Error]:', analysisErr.message);
+    }
+  }
+
   const groq = customGroqClient || new Groq({ apiKey });
   const model = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 
   const systemPrompt = buildScenarioSystemPrompt(channel);
-  const userContent = channel
+
+  // Build user content, augmenting with OCR extracted text and branding
+  let referenceContext = '';
+  if (imageAnalysis?.processed && imageAnalysis.fullExtractedText) {
+    referenceContext = `\n\n--- REFERENCE SCREENSHOT OCR ANALYSIS ---
+The user provided ${imageAnalysis.imageCount} reference screenshot(s). OCR extracted the following elements from the image:
+- Target Entity/Brand: ${imageAnalysis.detectedBrand}
+- Threat Indicators: ${imageAnalysis.detectedTactics.join(', ')}
+${imageAnalysis.detectedUrls.length ? `- Visible URLs/Links: ${imageAnalysis.detectedUrls.join(', ')}` : ''}
+${imageAnalysis.detectedEmails.length ? `- Visible Senders/Emails: ${imageAnalysis.detectedEmails.join(', ')}` : ''}
+${imageAnalysis.detectedPhones.length ? `- Visible Phone Numbers: ${imageAnalysis.detectedPhones.join(', ')}` : ''}
+- Exact Extracted Text from Image:
+"""
+${imageAnalysis.fullExtractedText}
+"""
+INSTRUCTION: Faithfully replicate the visual context, brand styling, sender persona, urgent pretext, and text content extracted from the reference image into the generated scenario JSON schema.`;
+  }
+
+  const userContent = (channel
     ? `Generate a realistic educational cybersecurity simulation scenario for channel "${channel}" based on this prompt: "${prompt}".`
-    : `Analyze this scenario prompt, predict the best simulation channel, classify the attack, and generate the complete educational scenario JSON: "${prompt}".`;
+    : `Analyze this scenario prompt, predict the best simulation channel, classify the attack, and generate the complete educational scenario JSON: "${prompt}".`
+  ) + referenceContext;
 
   let response;
   let rawContent = null;
@@ -401,12 +433,12 @@ export async function generateScenarioWithGroq({
             scenario: validation.scenario,
             modelUsed: model,
             sessionId: `sess-${validation.scenario.channel}-${Date.now()}`,
-            imageAnalysis: hasImages
+            imageAnalysis: imageAnalysis || (hasImages
               ? {
                   processed: false,
-                  notice: `Configured model (${model}) does not support multimodal vision input. Scenario was generated from text prompt.`
+                  notice: `No legible text was found in the uploaded reference images.`
                 }
-              : undefined
+              : undefined)
           };
         }
       }
@@ -475,12 +507,12 @@ export async function generateScenarioWithGroq({
     scenario: validatedScenario,
     modelUsed: model,
     sessionId: `sess-${determinedChannel}-${Date.now()}`,
-    imageAnalysis: hasImages
+    imageAnalysis: imageAnalysis || (hasImages
       ? {
           processed: false,
-          notice: `Configured model (${model}) does not support multimodal vision input. Scenario was generated from text prompt.`
+          notice: 'No legible text was found in the uploaded reference images.'
         }
-      : undefined
+      : undefined)
   };
 }
 
