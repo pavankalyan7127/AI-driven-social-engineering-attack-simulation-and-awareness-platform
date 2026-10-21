@@ -630,3 +630,139 @@ CRITICAL INSTRUCTIONS:
     return fallbackCallResponse(userSpeech, targetInformation);
   }
 }
+
+/**
+ * Fallback evaluator for email replies when Groq API key is absent or network fails
+ */
+export function fallbackEmailReplyEvaluation(replyContent = '') {
+  const text = (replyContent || '').toLowerCase().trim();
+
+  // 1. Positive termination: confronting attack, reporting, security policy, refusing credentials
+  const positivePatterns = [
+    /\b(?:phish|phishing|scam|scammer|fraud|fake|spoof|spoofed|malicious|hacker)\b/i,
+    /\b(?:reporting|report.*security|report.*it|security.*team|alert.*admin|it.*admin)\b/i,
+    /\b(?:never.*password|not.*clicking|suspicious|unauthorized|who.*are.*you.*really)\b/i,
+    /\b(?:do.*not.*trust|external.*domain|verify.*directly|it.*policy|won't.*comply)\b/i
+  ];
+
+  for (const pattern of positivePatterns) {
+    if (pattern.test(text)) {
+      return {
+        decision: 'positive_termination',
+        explanation: 'User recognized suspicious indicators and challenged or reported the phishing email.',
+        confidence: 0.95
+      };
+    }
+  }
+
+  // 2. Negative termination: submitting credentials, OTPs, PINs, passwords, or total compliance
+  const negativePatterns = [
+    /\b(?:password.*is|pin.*is|cvv.*is|ssn.*is|my.*password|here.*is.*my.*credentials)\b/i,
+    /\b(?:one-time.*code|otp.*is|verification.*code.*is|\b\d{4,8}\b.*(?:code|otp|pin))\b/i,
+    /\b(?:please.*don'?t.*delete|transferred.*the.*money|here.*are.*my.*details|sent.*the.*payment)\b/i,
+    /\b(?:my.*username.*and.*password|login.*is|card.*number.*is)\b/i
+  ];
+
+  for (const pattern of negativePatterns) {
+    if (pattern.test(text)) {
+      return {
+        decision: 'negative_termination',
+        explanation: 'User complied with the attack and disclosed sensitive credentials or authorization details.',
+        confidence: 0.95
+      };
+    }
+  }
+
+  // 3. Continue simulation: neutral, casual, ambiguous, or conversational
+  return {
+    decision: 'continue_simulation',
+    explanation: 'User reply is ambiguous or conversational. Allowing simulation to continue.',
+    confidence: 0.85
+  };
+}
+
+/**
+ * Evaluates whether an email reply in a simulation represents:
+ * - 'positive_termination': user challenged or reported the malicious email.
+ * - 'negative_termination': user complied or disclosed sensitive credentials.
+ * - 'continue_simulation': user's reply is ambiguous/conversational; let simulation continue.
+ */
+export async function evaluateEmailReplyWithGroq({
+  replyContent,
+  emailSubject = '',
+  emailBody = '',
+  sender = {},
+  scenarioContext = '',
+  customGroqClient = null
+}) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey && !customGroqClient) {
+    return fallbackEmailReplyEvaluation(replyContent);
+  }
+
+  const groq = customGroqClient || new Groq({ apiKey });
+  const model = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
+
+  const senderStr = typeof sender === 'string'
+    ? sender
+    : `${sender?.name || ''} <${sender?.email || ''}>`.trim();
+
+  const systemPrompt = `You are a strict cybersecurity evaluation engine analyzing a user's reply to a suspicious social engineering / phishing email in an educational simulation.
+
+Context of the suspicious email:
+- Sender: "${senderStr}"
+- Subject: "${emailSubject}"
+- Email Body / Attack Pretext: "${String(emailBody).slice(0, 500)}"
+- Scenario Pretext: "${scenarioContext}"
+
+The user replied with:
+"""
+${replyContent}
+"""
+
+Strictly evaluate the reply and choose EXACTLY ONE of the following 3 decisions:
+1. "positive_termination": The user recognized or suspected the attack, challenged the sender's identity, stated they are reporting it, refused to comply with credential/financial requests, or cited security policy.
+2. "negative_termination": The user succumbed to the attack, provided requested credentials, OTP, passwords, personal data, or agreed to execute dangerous instructions.
+3. "continue_simulation": The user's reply is neutral, casual, ambiguous, seeking generic clarification, or not a decisive defense or compromise. The simulation should continue without terminating.
+
+Respond ONLY with a valid JSON object matching:
+{
+  "decision": "positive_termination" | "negative_termination" | "continue_simulation",
+  "explanation": "Concise 1-2 sentence explanation of why this decision was chosen",
+  "confidence": 0.0 to 1.0
+}`;
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Classify this email reply: "${replyContent}"` }
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+      max_tokens: 300
+    });
+
+    const content = completion.choices[0]?.message?.content || '{}';
+    const parsed = JSON.parse(content);
+
+    const validDecisions = ['positive_termination', 'negative_termination', 'continue_simulation'];
+    let decision = (parsed?.decision || '').toLowerCase().trim();
+
+    if (!validDecisions.includes(decision)) {
+      if (decision.includes('positive')) decision = 'positive_termination';
+      else if (decision.includes('negative')) decision = 'negative_termination';
+      else decision = 'continue_simulation';
+    }
+
+    return {
+      decision,
+      explanation: parsed?.explanation || `Reply evaluated as ${decision}.`,
+      confidence: typeof parsed?.confidence === 'number' ? parsed.confidence : 0.95
+    };
+  } catch (err) {
+    console.warn('[Groq Email Reply Eval Warning]: Falling back to local analyzer.', err.message);
+    return fallbackEmailReplyEvaluation(replyContent);
+  }
+}

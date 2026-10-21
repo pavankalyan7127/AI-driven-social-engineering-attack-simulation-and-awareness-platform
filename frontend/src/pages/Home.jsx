@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Shield,
   Upload,
@@ -8,7 +8,9 @@ import {
   Sparkles,
   ArrowRight,
   Info,
-  Cpu
+  Cpu,
+  Mic,
+  MicOff
 } from 'lucide-react';
 
 const PRESETS = [
@@ -52,8 +54,105 @@ export default function Home({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [fileError, setFileError] = useState(null);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceNotice, setVoiceNotice] = useState(null);
 
   const fileInputRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const speechBaseTextRef = useRef('');
+
+  // Clean up any ongoing speech recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (_) {}
+      }
+    };
+  }, []);
+
+  const toggleListening = () => {
+    const SpeechRecognition = typeof window !== 'undefined'
+      ? (window.SpeechRecognition || window.webkitSpeechRecognition)
+      : null;
+
+    if (!SpeechRecognition) {
+      setVoiceNotice('Voice recognition is not supported in this browser. Please use Chrome, Edge, or Safari, or type your scenario.');
+      setTimeout(() => setVoiceNotice(null), 6000);
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (_) {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      speechBaseTextRef.current = prompt.trim();
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setVoiceNotice(null);
+        setErrorMessage(null);
+      };
+
+      recognition.onresult = (event) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+
+        for (let i = 0; i < event.results.length; i++) {
+          const item = event.results[i];
+          const transcript = item[0]?.transcript || '';
+          if (item.isFinal) {
+            finalTranscript += transcript + ' ';
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        const combinedSpoken = (finalTranscript + interimTranscript).trim();
+        if (combinedSpoken) {
+          const prefix = speechBaseTextRef.current ? speechBaseTextRef.current + ' ' : '';
+          const newPrompt = (prefix + combinedSpoken).slice(0, 2000);
+          setPrompt(newPrompt);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('[SpeechRecognition Error]:', event.error);
+        if (event.error === 'not-allowed') {
+          setVoiceNotice('Microphone access was denied. Please allow microphone permissions in browser settings.');
+        } else if (event.error === 'network') {
+          setVoiceNotice('Network error occurred during speech recognition.');
+        } else if (event.error !== 'no-speech') {
+          setVoiceNotice(`Speech recognition error: ${event.error}`);
+        }
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error('[SpeechRecognition Start Error]:', err);
+      setVoiceNotice('Could not start microphone voice input.');
+      setIsListening(false);
+    }
+  };
 
   const trimmedPrompt = prompt.trim();
   const isPromptTooShort = trimmedPrompt.length > 0 && trimmedPrompt.length < 5;
@@ -114,6 +213,13 @@ export default function Home({
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     if (!isFormValid) return;
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (_) {}
+    }
+    setIsListening(false);
 
     setIsLoading(true);
     setErrorMessage(null);
@@ -257,32 +363,82 @@ export default function Home({
               >
                 Describe the Attack Scenario
               </label>
-              <span
-                data-testid="char-counter"
-                className={`text-xs font-mono ${
-                  prompt.length > 2000
-                    ? 'text-red-400 font-bold'
-                    : prompt.length < 5 && prompt.length > 0
-                    ? 'text-amber-400'
-                    : 'text-gray-400'
-                }`}
-              >
-                {prompt.length} / 2000 chars
-              </span>
+              <div className="flex items-center gap-2.5">
+                {isListening && (
+                  <span
+                    data-testid="listening-indicator"
+                    className="flex items-center gap-1.5 text-xs text-red-400 font-medium animate-pulse"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                    Listening... Speak now
+                  </span>
+                )}
+                <span
+                  data-testid="char-counter"
+                  className={`text-xs font-mono ${
+                    prompt.length > 2000
+                      ? 'text-red-400 font-bold'
+                      : prompt.length < 5 && prompt.length > 0
+                      ? 'text-amber-400'
+                      : 'text-gray-400'
+                  }`}
+                >
+                  {prompt.length} / 2000 chars
+                </span>
+              </div>
             </div>
 
-            <textarea
-              id="attack-prompt"
-              data-testid="prompt-input"
-              rows={4}
-              value={prompt}
-              onChange={(e) => {
-                setPrompt(e.target.value);
-                setErrorMessage(null);
-              }}
-              placeholder="e.g. Simulate a spear phishing email from the university IT department warning students their account will be deactivated unless they verify credentials within 24 hours..."
-              className="w-full bg-gray-950 border border-gray-800 rounded-xl p-3.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-y"
-            />
+            <div className="flex gap-2.5 items-stretch">
+              <textarea
+                id="attack-prompt"
+                data-testid="prompt-input"
+                rows={4}
+                value={prompt}
+                onChange={(e) => {
+                  setPrompt(e.target.value);
+                  setErrorMessage(null);
+                }}
+                placeholder="e.g. Simulate a spear phishing email from the university IT department warning students their account will be deactivated unless they verify credentials within 24 hours..."
+                className="flex-1 min-h-[110px] bg-gray-950 border border-gray-800 rounded-xl p-3.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-y"
+              />
+
+              {/* Voice Input Button Next to the Input Box */}
+              <button
+                type="button"
+                data-testid="voice-input-btn"
+                onClick={toggleListening}
+                title={isListening ? 'Stop listening' : 'Speak scenario prompt (Voice Input)'}
+                className={`w-24 shrink-0 rounded-xl border flex flex-col items-center justify-center gap-2 p-3 transition-all cursor-pointer select-none group ${
+                  isListening
+                    ? 'bg-red-500/20 border-red-500/80 text-red-400 shadow-lg shadow-red-500/20 animate-pulse ring-2 ring-red-500/30'
+                    : 'bg-gray-950 hover:bg-gray-900 border-gray-800 hover:border-blue-500/60 text-gray-400 hover:text-blue-400'
+                }`}
+              >
+                <div
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                    isListening
+                      ? 'bg-red-500 text-white shadow-md'
+                      : 'bg-gray-900 group-hover:bg-gray-800 text-blue-400 border border-gray-800'
+                  }`}
+                >
+                  {isListening ? (
+                    <MicOff className="w-5 h-5" />
+                  ) : (
+                    <Mic className="w-5 h-5" />
+                  )}
+                </div>
+                <span className="text-[11px] font-semibold tracking-wide text-center leading-tight">
+                  {isListening ? 'Stop Mic' : 'Voice Input'}
+                </span>
+              </button>
+            </div>
+
+            {voiceNotice && (
+              <p data-testid="voice-notice" className="text-xs text-amber-400 flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span>{voiceNotice}</span>
+              </p>
+            )}
 
             {isPromptTooShort && (
               <p className="text-xs text-amber-400 flex items-center gap-1.5">

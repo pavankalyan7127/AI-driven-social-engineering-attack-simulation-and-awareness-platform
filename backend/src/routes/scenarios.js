@@ -1,6 +1,11 @@
 import express from 'express';
 import multer from 'multer';
-import { generateScenarioWithGroq, generateCallAttackerResponse } from '../services/groqService.js';
+import {
+  generateScenarioWithGroq,
+  generateCallAttackerResponse,
+  evaluateEmailReplyWithGroq,
+  fallbackEmailReplyEvaluation
+} from '../services/groqService.js';
 
 const router = express.Router();
 
@@ -171,6 +176,64 @@ router.post('/call/respond', async (req, res) => {
       success: false,
       error: 'Failed to analyze user speech.',
       attackerSpeech: 'Sir, I need you to confirm your card details now or your account will be frozen.'
+    });
+  }
+});
+
+/**
+ * POST /api/scenarios/email/evaluate-reply
+ * Evaluates whether an email reply represents a positive termination (defense/confrontation),
+ * a negative termination (compliance/credential disclosure), or should continue the simulation.
+ */
+router.post('/email/evaluate-reply', async (req, res) => {
+  try {
+    const { replyContent, emailSubject, emailBody, sender, scenarioContext } = req.body;
+
+    if (!replyContent || typeof replyContent !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid "replyContent" in request body.'
+      });
+    }
+
+    const result = await evaluateEmailReplyWithGroq({
+      replyContent,
+      emailSubject,
+      emailBody,
+      sender,
+      scenarioContext
+    });
+
+    const statusMap = {
+      positive_termination: 'safe_exit',
+      negative_termination: 'completed',
+      continue_simulation: null
+    };
+
+    const actionMap = {
+      positive_termination: 'threat_confronted',
+      negative_termination: 'risky_reply_sent',
+      continue_simulation: 'reply_sent'
+    };
+
+    return res.status(200).json({
+      success: true,
+      decision: result.decision,
+      explanation: result.explanation,
+      confidence: result.confidence,
+      status: statusMap[result.decision] || null,
+      action: actionMap[result.decision] || 'reply_sent'
+    });
+  } catch (err) {
+    console.error('[Email Evaluate Reply Route Error]:', err.message);
+    const fallback = fallbackEmailReplyEvaluation(req.body?.replyContent);
+    return res.status(200).json({
+      success: true,
+      decision: fallback.decision,
+      explanation: fallback.explanation,
+      confidence: fallback.confidence,
+      status: fallback.decision === 'positive_termination' ? 'safe_exit' : (fallback.decision === 'negative_termination' ? 'completed' : null),
+      action: fallback.decision === 'positive_termination' ? 'threat_confronted' : (fallback.decision === 'negative_termination' ? 'risky_reply_sent' : 'reply_sent')
     });
   }
 });

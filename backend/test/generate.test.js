@@ -687,4 +687,123 @@ describe('POST /api/scenarios/generate - AI Scenario Generation', () => {
       expect(res.body.success).toBe(false);
     });
   });
+
+  // 10. Email Simulation AI Reply Evaluation
+  describe('POST /api/scenarios/email/evaluate-reply', () => {
+    it('returns 400 when replyContent is missing', async () => {
+      const res = await request(app)
+        .post('/api/scenarios/email/evaluate-reply')
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toMatch(/Missing or invalid "replyContent"/i);
+    });
+
+    it('evaluates defensive reply as positive_termination with safe_exit status', async () => {
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                decision: 'positive_termination',
+                explanation: 'User confronted phishing attempt and reported to security team.',
+                confidence: 0.98
+              })
+            }
+          }
+        ]
+      });
+
+      const res = await request(app)
+        .post('/api/scenarios/email/evaluate-reply')
+        .send({
+          replyContent: 'This looks like a phishing scam. I am reporting your email to IT security.',
+          emailSubject: 'Urgent Account Suspension',
+          emailBody: 'Verify credentials immediately.'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.decision).toBe('positive_termination');
+      expect(res.body.status).toBe('safe_exit');
+      expect(res.body.action).toBe('threat_confronted');
+    });
+
+    it('evaluates compromised reply as negative_termination with completed status', async () => {
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                decision: 'negative_termination',
+                explanation: 'User disclosed password in reply.',
+                confidence: 0.99
+              })
+            }
+          }
+        ]
+      });
+
+      const res = await request(app)
+        .post('/api/scenarios/email/evaluate-reply')
+        .send({
+          replyContent: 'Here is my password: SuperSecret123. Please do not close my account.',
+          emailSubject: 'Urgent Account Suspension',
+          emailBody: 'Send your password to cancel closure.'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.decision).toBe('negative_termination');
+      expect(res.body.status).toBe('completed');
+      expect(res.body.action).toBe('risky_reply_sent');
+    });
+
+    it('evaluates conversational reply as continue_simulation with null status', async () => {
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                decision: 'continue_simulation',
+                explanation: 'Reply is neutral asking for clarification.',
+                confidence: 0.9
+              })
+            }
+          }
+        ]
+      });
+
+      const res = await request(app)
+        .post('/api/scenarios/email/evaluate-reply')
+        .send({
+          replyContent: 'Who is this and what department are you from?',
+          emailSubject: 'Urgent Account Suspension',
+          emailBody: 'Send your password to cancel closure.'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.decision).toBe('continue_simulation');
+      expect(res.body.status).toBeNull();
+      expect(res.body.action).toBe('reply_sent');
+    });
+
+    it('falls back to local heuristic evaluator when Groq throws', async () => {
+      mockCreate.mockRejectedValueOnce(new Error('Groq rate limited'));
+
+      const res = await request(app)
+        .post('/api/scenarios/email/evaluate-reply')
+        .send({
+          replyContent: 'This is obviously a phishing scam!',
+          emailSubject: 'Invoice Notice'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.decision).toBe('positive_termination');
+      expect(res.body.status).toBe('safe_exit');
+    });
+  });
 });

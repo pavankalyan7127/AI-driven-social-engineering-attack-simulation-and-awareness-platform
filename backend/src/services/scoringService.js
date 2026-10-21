@@ -33,6 +33,9 @@ function normalizeEventToCategory(event) {
 
     case 'reply_sent':
     case 'message_sent':
+      if (metadata.isDefensiveReply || metadata.decision === 'positive_termination') {
+        return 'safe_exit';
+      }
       return 'risky_reply_sent';
 
     case 'voice_interaction':

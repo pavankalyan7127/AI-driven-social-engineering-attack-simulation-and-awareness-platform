@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Home from './Home';
 
@@ -227,5 +227,81 @@ describe('Home Page Component', () => {
     // Verification: onGenerateScenario was NOT called, preserving user input
     expect(mockOnGenerateScenario).not.toHaveBeenCalled();
     expect(promptInput.value).toBe(userPrompt);
+  });
+
+  // Test 12: Voice input button rendering and fallback for unsupported browsers
+  it('renders voice input button and displays notice if Web Speech API is unavailable', () => {
+    const originalSpeech = window.SpeechRecognition;
+    const originalWebkit = window.webkitSpeechRecognition;
+    delete window.SpeechRecognition;
+    delete window.webkitSpeechRecognition;
+
+    render(<Home onGenerateScenario={mockOnGenerateScenario} />);
+    const voiceBtn = screen.getByTestId('voice-input-btn');
+    expect(voiceBtn).toBeInTheDocument();
+    expect(screen.getByText('Voice Input')).toBeInTheDocument();
+
+    fireEvent.click(voiceBtn);
+
+    expect(screen.getByTestId('voice-notice')).toBeInTheDocument();
+    expect(screen.getByText(/Voice recognition is not supported in this browser/i)).toBeInTheDocument();
+
+    window.SpeechRecognition = originalSpeech;
+    window.webkitSpeechRecognition = originalWebkit;
+  });
+
+  // Test 13: Voice input starts listening and transcribes speech into the prompt input
+  it('starts speech recognition and transcribes spoken audio into prompt textarea', async () => {
+    let mockInstance = null;
+    class MockSpeechRecognition {
+      constructor() {
+        this.continuous = false;
+        this.interimResults = false;
+        this.lang = '';
+        this.onstart = null;
+        this.onresult = null;
+        this.onerror = null;
+        this.onend = null;
+        mockInstance = this;
+      }
+      start() {
+        if (this.onstart) this.onstart();
+      }
+      stop() {
+        if (this.onend) this.onend();
+      }
+      abort() {
+        if (this.onend) this.onend();
+      }
+    }
+
+    window.SpeechRecognition = MockSpeechRecognition;
+
+    render(<Home onGenerateScenario={mockOnGenerateScenario} />);
+    const voiceBtn = screen.getByTestId('voice-input-btn');
+    const promptInput = screen.getByTestId('prompt-input');
+
+    fireEvent.click(voiceBtn);
+
+    expect(screen.getByTestId('listening-indicator')).toBeInTheDocument();
+    expect(screen.getByText('Stop Mic')).toBeInTheDocument();
+
+    // Simulate speech recognition result event
+    act(() => {
+      mockInstance.onresult({
+        results: [
+          [{ transcript: 'Simulate urgent bank fraud email' }]
+        ]
+      });
+    });
+
+    expect(promptInput.value).toBe('Simulate urgent bank fraud email');
+
+    // Clicking again stops speech recognition
+    fireEvent.click(voiceBtn);
+    expect(screen.queryByTestId('listening-indicator')).not.toBeInTheDocument();
+    expect(screen.getByText('Voice Input')).toBeInTheDocument();
+
+    delete window.SpeechRecognition;
   });
 });

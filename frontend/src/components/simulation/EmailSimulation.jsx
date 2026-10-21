@@ -204,6 +204,7 @@ export default function EmailSimulation({
   const [isReplying, setIsReplying] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [replySuccessMessage, setReplySuccessMessage] = useState(null);
+  const [isSubmittingReply, setIsSubmittingReply] = useState(false);
 
   // Compose Modal State (Floating New Message window)
   const [isComposeOpen, setIsComposeOpen] = useState(false);
@@ -472,16 +473,83 @@ export default function EmailSimulation({
   };
 
   // Send simulated reply
-  const handleSendReply = (e) => {
+  const handleSendReply = async (e) => {
     if (e) e.preventDefault();
-    if (!replyText.trim()) return;
+    if (!replyText.trim() || isSubmittingReply) return;
 
+    const trimmedReply = replyText.trim();
+    setIsSubmittingReply(true);
+
+    // 1. Emit telemetry event 'reply_sent'
     emitEvent('reply_sent', {
       recipient: activeEmail?.sender?.email || activeEmail?.sender?.name,
-      replyContent: replyText.trim(),
-      simulated: true
+      replyContent: trimmedReply,
+      simulated: true,
+      emailId: activeEmail?.id || targetId,
+      isTarget: activeEmail?.isTarget || activeEmail?.id === targetId
     });
 
+    try {
+      // 2. Send reply text and context to AI to evaluate termination
+      const response = await fetch('/api/scenarios/email/evaluate-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          replyContent: trimmedReply,
+          emailSubject: activeEmail?.subject || '',
+          emailBody: activeEmail?.body?.text || activeEmail?.snippet || '',
+          sender: activeEmail?.sender || {},
+          scenarioContext: scenario?.title || ''
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data?.success) {
+        if (data.decision === 'positive_termination') {
+          // Positive termination: user confronted/reported phishing
+          setReplySuccessMessage(data.explanation || 'Defensive confrontation detected! Simulation ended safely.');
+          setReplyText('');
+          setIsReplying(false);
+
+          if (typeof onComplete === 'function') {
+            onComplete({
+              status: 'safe_exit',
+              action: 'threat_confronted',
+              scenarioId,
+              sessionId,
+              reason: data.explanation || 'User confronted the malicious email threat via reply'
+            });
+          }
+          return;
+        }
+
+        if (data.decision === 'negative_termination') {
+          // Negative termination: user compromised credentials / complied with attacker
+          setReplySuccessMessage(data.explanation || 'Compromised information submitted. Simulation ended.');
+          setReplyText('');
+          setIsReplying(false);
+
+          if (typeof onComplete === 'function') {
+            onComplete({
+              status: 'completed',
+              action: 'risky_reply_sent',
+              scenarioId,
+              sessionId,
+              reason: data.explanation || 'User disclosed sensitive credentials in email reply'
+            });
+          }
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('[Email Reply Evaluation Error]:', err.message);
+    } finally {
+      setIsSubmittingReply(false);
+    }
+
+    // 3. If AI decision is "continue_simulation" (or evaluation failed):
+    // Just leave and let the user continue the simulation without terminating
     setReplySuccessMessage('Simulated reply recorded. No real email was sent.');
     setReplyText('');
     setIsReplying(false);
@@ -797,8 +865,9 @@ export default function EmailSimulation({
                 </button>
                 <button
                   onClick={handleSendReply}
+                  disabled={!replyText.trim() || isSubmittingReply}
                   title="Send reply"
-                  className="p-2 text-[#5cdbb5] hover:text-[#7ee8c7] rounded-full hover:bg-white/5 active:scale-95"
+                  className="p-2 text-[#5cdbb5] hover:text-[#7ee8c7] disabled:text-gray-500 rounded-full hover:bg-white/5 active:scale-95"
                 >
                   <Send className="w-5 h-5" />
                 </button>
@@ -2936,10 +3005,10 @@ export default function EmailSimulation({
                       <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
                         <button
                           onClick={handleSendReply}
-                          disabled={!replyText.trim()}
+                          disabled={!replyText.trim() || isSubmittingReply}
                           className="inline-flex items-center gap-2 bg-[#0b57d0] hover:bg-[#0842a0] disabled:bg-gray-300 text-white px-5 py-2 rounded-full text-xs font-semibold shadow-xs transition-colors"
                         >
-                          <span>Send</span>
+                          <span>{isSubmittingReply ? 'Analyzing...' : 'Send'}</span>
                         </button>
 
                         <div className="flex items-center gap-2 text-gray-500">

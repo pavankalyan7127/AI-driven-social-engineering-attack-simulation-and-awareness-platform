@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import EmailSimulation from './EmailSimulation';
 import { sampleScenario } from '../../data/sampleScenario';
@@ -515,6 +515,135 @@ describe('EmailSimulation Component', () => {
           })
         })
       );
+    });
+
+    it('terminates simulation with safe_exit when AI evaluates reply as positive_termination', async () => {
+      const handleAction = vi.fn();
+      const handleComplete = vi.fn();
+
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          decision: 'positive_termination',
+          explanation: 'User recognized phishing and confronted the attacker.',
+          status: 'safe_exit',
+          action: 'threat_confronted'
+        })
+      });
+
+      render(
+        <EmailSimulation
+          scenario={sampleScenario}
+          sessionId="test-session-123"
+          onAction={handleAction}
+          onComplete={handleComplete}
+        />
+      );
+
+      fireEvent.click(screen.getByText('VIT Events - Password reset'));
+      const replyButtons = screen.getAllByText('Reply');
+      fireEvent.click(replyButtons[0]);
+
+      const textarea = screen.getByPlaceholderText(/Type your reply here/i);
+      fireEvent.change(textarea, { target: { value: 'This is a phishing scam, I am reporting this to IT security!' } });
+
+      const sendButton = screen.getByText('Send');
+      fireEvent.click(sendButton);
+
+      await waitFor(() => {
+        expect(handleComplete).toHaveBeenCalledWith(
+          expect.objectContaining({
+            status: 'safe_exit',
+            action: 'threat_confronted'
+          })
+        );
+      });
+    });
+
+    it('terminates simulation with completed when AI evaluates reply as negative_termination', async () => {
+      const handleAction = vi.fn();
+      const handleComplete = vi.fn();
+
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          decision: 'negative_termination',
+          explanation: 'User disclosed password in reply.',
+          status: 'completed',
+          action: 'risky_reply_sent'
+        })
+      });
+
+      render(
+        <EmailSimulation
+          scenario={sampleScenario}
+          sessionId="test-session-123"
+          onAction={handleAction}
+          onComplete={handleComplete}
+        />
+      );
+
+      fireEvent.click(screen.getByText('VIT Events - Password reset'));
+      const replyButtons = screen.getAllByText('Reply');
+      fireEvent.click(replyButtons[0]);
+
+      const textarea = screen.getByPlaceholderText(/Type your reply here/i);
+      fireEvent.change(textarea, { target: { value: 'Here is my password: secret123' } });
+
+      const sendButton = screen.getByText('Send');
+      fireEvent.click(sendButton);
+
+      await waitFor(() => {
+        expect(handleComplete).toHaveBeenCalledWith(
+          expect.objectContaining({
+            status: 'completed',
+            action: 'risky_reply_sent'
+          })
+        );
+      });
+    });
+
+    it('does not terminate and continues simulation when AI evaluates reply as continue_simulation', async () => {
+      const handleAction = vi.fn();
+      const handleComplete = vi.fn();
+
+      global.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          decision: 'continue_simulation',
+          explanation: 'User reply is ambiguous. Allowing simulation to continue.',
+          status: null,
+          action: 'reply_sent'
+        })
+      });
+
+      render(
+        <EmailSimulation
+          scenario={sampleScenario}
+          sessionId="test-session-123"
+          onAction={handleAction}
+          onComplete={handleComplete}
+        />
+      );
+
+      fireEvent.click(screen.getByText('VIT Events - Password reset'));
+      const replyButtons = screen.getAllByText('Reply');
+      fireEvent.click(replyButtons[0]);
+
+      const textarea = screen.getByPlaceholderText(/Type your reply here/i);
+      fireEvent.change(textarea, { target: { value: 'Who sent this message?' } });
+
+      const sendButton = screen.getByText('Send');
+      fireEvent.click(sendButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Simulated reply recorded/i)).toBeInTheDocument();
+      });
+
+      expect(handleComplete).not.toHaveBeenCalled();
     });
   });
 });
