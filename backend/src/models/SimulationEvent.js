@@ -5,6 +5,7 @@ export const ALLOWED_EVENT_TYPES = [
   'scenario_viewed',
   'threat_reported',
   'safe_exit',
+  'user_blocked_sender',
   'scenario_completed',
   'simulation_completed',
   'simulation_started',

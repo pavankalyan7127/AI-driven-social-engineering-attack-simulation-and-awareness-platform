@@ -835,18 +835,8 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
         expect(screen.getByText('Identified suspicious sender domain')).toBeInTheDocument();
       });
 
-      // Return to simulation view
-      fireEvent.click(screen.getByTestId('back-to-simulation-btn'));
-      await waitFor(() => {
-        expect(screen.getByText('Security Alert Simulation')).toBeInTheDocument();
-      });
-
-      // Re-opening report view does not trigger duplicate generation
-      fireEvent.click(screen.getByTestId('view-report-btn'));
-      await waitFor(() => {
-        expect(screen.getByTestId('report-view')).toBeInTheDocument();
-      });
-      expect(reportCalledCount).toBe(1);
+      // Verify old View Simulation action is removed in Step 4
+      expect(screen.queryByTestId('back-to-simulation-btn')).not.toBeInTheDocument();
 
       // Return to generator resets back to Home view
       const returnHomeBtn = screen.getAllByTestId('return-to-generator-btn')[0];
@@ -980,6 +970,450 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
         expect(screen.getByTestId('report-view')).toBeInTheDocument();
         expect(screen.getByText('Report generated on retry successfully.')).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Scenario-Driven Outcome Engine and Simulation Termination (Step 2)', () => {
+    it('renders End Simulation button during active simulation and displays confirmation modal', async () => {
+      global.fetch = vi.fn((url) => {
+        if (url.includes('/api/scenarios/generate')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scenario: {
+                scenarioId: 'scen-step2-ui',
+                channel: 'email',
+                title: 'Step 2 Manual End UI Test',
+                emailData: {
+                  id: 'm-step2',
+                  isTarget: true,
+                  sender: { name: 'IT Staff', email: 'it@urgent-reset.org' },
+                  subject: 'Urgent Action Required',
+                  contentBlocks: [{ type: 'paragraph', text: 'Please act now.' }]
+                }
+              }
+            })
+          });
+        }
+        if (url.includes('/api/sessions') && !url.includes('/status') && !url.includes('/outcome')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({
+              success: true,
+              sessionId: 'sess-step2-ui-1',
+              session: { sessionId: 'sess-step2-ui-1', status: 'active' }
+            })
+          });
+        }
+        if (url.includes('/api/events')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({ success: true, event: { eventId: 'evt-1' } })
+          });
+        }
+        return Promise.reject(new Error(`Unhandled URL: ${url}`));
+      });
+
+      render(<App />);
+      fireEvent.change(screen.getByTestId('prompt-input'), { target: { value: 'Test manual end button' } });
+      fireEvent.click(screen.getByTestId('generate-button'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('end-simulation-btn')).toBeInTheDocument();
+      });
+
+      // Click End Simulation button
+      fireEvent.click(screen.getByTestId('end-simulation-btn'));
+
+      // Confirmation modal should appear
+      expect(screen.getByTestId('end-confirm-modal')).toBeInTheDocument();
+      expect(screen.getByText(/End Simulation Early\?/i)).toBeInTheDocument();
+
+      // Click Cancel on modal
+      fireEvent.click(screen.getByTestId('cancel-end-btn'));
+
+      // Modal is dismissed, simulation stays active
+      expect(screen.queryByTestId('end-confirm-modal')).not.toBeInTheDocument();
+      expect(screen.getByTestId('session-status-badge')).toHaveTextContent(/active/i);
+    });
+
+    it('confirms manual end, sends POST /outcome with manualEnd: true, displays incomplete banner, and opens report', async () => {
+      let manualEndCalled = false;
+
+      global.fetch = vi.fn((url, options) => {
+        if (url.includes('/api/scenarios/generate')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scenario: {
+                scenarioId: 'scen-step2-confirm',
+                channel: 'email',
+                title: 'Step 2 Manual End Confirm Test',
+                emailData: {
+                  id: 'm-step2-c',
+                  isTarget: true,
+                  sender: { name: 'Support', email: 'support@notice.org' },
+                  subject: 'Account Notice',
+                  contentBlocks: [{ type: 'paragraph', text: 'Important notice.' }]
+                }
+              }
+            })
+          });
+        }
+        if (url.includes('/api/sessions') && !url.includes('/status') && !url.includes('/outcome') && !url.includes('/score') && !url.includes('/report')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({
+              success: true,
+              sessionId: 'sess-step2-confirm-1',
+              session: { sessionId: 'sess-step2-confirm-1', status: 'active' }
+            })
+          });
+        }
+        if (url.includes('/api/events')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({ success: true, event: { eventId: 'evt-2' } })
+          });
+        }
+        if (url.includes('/api/sessions/sess-step2-confirm-1/outcome')) {
+          const body = JSON.parse(options.body);
+          if (body.manualEnd === true) {
+            manualEndCalled = true;
+          }
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              sessionId: 'sess-step2-confirm-1',
+              session: { sessionId: 'sess-step2-confirm-1', status: 'completed', outcome: 'incomplete' },
+              scoreRecord: {
+                sessionId: 'sess-step2-confirm-1',
+                score: 50,
+                riskLevel: 'high',
+                formulaVersion: '2.0.0',
+                status: 'final'
+              },
+              outcome: { outcome: 'incomplete', status: 'completed' }
+            })
+          });
+        }
+        if (url.includes('/api/sessions/sess-step2-confirm-1/report')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              report: {
+                sessionId: 'sess-step2-confirm-1',
+                score: 50,
+                riskLevel: 'high',
+                summary: 'Simulation was ended manually before outcome completion.',
+                strengths: [],
+                riskyBehaviors: [],
+                threatIndicators: [],
+                recommendations: ['Stay vigilant and complete simulations.'],
+                keyEvents: []
+              }
+            })
+          });
+        }
+        return Promise.reject(new Error(`Unhandled URL: ${url}`));
+      });
+
+      render(<App />);
+      fireEvent.change(screen.getByTestId('prompt-input'), { target: { value: 'Test manual end confirmation' } });
+      fireEvent.click(screen.getByTestId('generate-button'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('end-simulation-btn')).toBeInTheDocument();
+      });
+
+      // Click End Simulation
+      fireEvent.click(screen.getByTestId('end-simulation-btn'));
+
+      // Click Confirm End
+      fireEvent.click(screen.getByTestId('confirm-end-btn'));
+
+      // Verify outcome notification is rendered with incomplete message
+      await waitFor(() => {
+        expect(manualEndCalled).toBe(true);
+        expect(screen.getByTestId('outcome-notification')).toBeInTheDocument();
+        expect(screen.getByText(/Simulation ended before a definitive attack outcome was established/i)).toBeInTheDocument();
+      });
+
+      // After auto-transition, report view is displayed
+      await waitFor(() => {
+        expect(screen.getByTestId('report-view')).toBeInTheDocument();
+      }, { timeout: 3000 });
+    });
+  });
+
+  describe('Native Mobile SMS Simulation Channel Integration (Step 3)', () => {
+    it('hides viewport toggle and constrains simulation to mobile width when scenario channel is sms', async () => {
+      global.fetch = vi.fn((url) => {
+        if (url.includes('/api/scenarios/generate')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scenario: {
+                scenarioId: 'scen-sms-mobile-only',
+                channel: 'sms',
+                title: 'Mobile Smishing Simulation',
+                conversations: [
+                  {
+                    id: 'conv-sms-1',
+                    isTarget: true,
+                    sender: {
+                      name: 'Fraud Dept',
+                      phoneNumber: '+1 (800) 555-0199',
+                      avatar: 'F',
+                      verificationStatus: 'Unverified Sender'
+                    },
+                    messages: [
+                      {
+                        id: 'm1',
+                        sender: 'contact',
+                        text: 'Urgent: Fraud detected on debit card.'
+                      }
+                    ]
+                  }
+                ]
+              }
+            })
+          });
+        }
+        if (url.includes('/api/sessions') && !url.includes('/status') && !url.includes('/outcome')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({
+              success: true,
+              sessionId: 'sess-sms-mob-1',
+              session: { sessionId: 'sess-sms-mob-1', status: 'active', channel: 'sms' }
+            })
+          });
+        }
+        if (url.includes('/api/events')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({ success: true, event: { eventId: 'evt-sms-1' } })
+          });
+        }
+        return Promise.reject(new Error(`Unhandled URL: ${url}`));
+      });
+
+      render(<App />);
+      fireEvent.change(screen.getByTestId('prompt-input'), { target: { value: 'Test SMS mobile layout' } });
+      fireEvent.click(screen.getByTestId('generate-button'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Mobile Smishing Simulation')).toBeInTheDocument();
+      });
+
+      // Viewport toggle should NOT be in the DOM for SMS channel
+      expect(screen.queryByTestId('viewport-toggle-container')).not.toBeInTheDocument();
+
+      // Mobile phone status bar is visible
+      expect(screen.getByTestId('mobile-status-bar')).toBeInTheDocument();
+
+      // SMS simulation container is rendered
+      expect(screen.getByTestId('sms-simulation-container')).toBeInTheDocument();
+
+      // End Simulation button is present and active
+      expect(screen.getByTestId('end-simulation-btn')).toBeInTheDocument();
+    });
+  });
+
+  describe('Awareness Report and Navigation Enhancements (Step 4)', () => {
+    it('automatically navigates to the awareness report after outcome notification and allows redo simulation', async () => {
+      let sessionCreateCount = 0;
+      let generateCount = 0;
+
+      global.fetch = vi.fn((url, options) => {
+        if (url.includes('/api/scenarios/generate')) {
+          generateCount++;
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scenario: {
+                scenarioId: 'scen-step4-test',
+                channel: 'email',
+                title: 'Targeted Executive Spear Phishing',
+                attackClassification: {
+                  primaryType: 'spear_phishing',
+                  secondaryTechniques: ['urgency_manipulation', 'credential_phishing'],
+                  rationale: 'Targets the recipient with urgent executive credential demands.'
+                },
+                terminationRules: {
+                  positiveConditions: [{ type: 'action_match', targetAction: 'threat_reported' }],
+                  negativeConditions: [{ type: 'action_match', targetAction: 'credentials_submitted' }]
+                },
+                emailData: {
+                  id: 'm-target-step4',
+                  isTarget: true,
+                  sender: { name: 'IT Security', email: 'it@corp-verify.com' },
+                  subject: 'Urgent: Verification Needed',
+                  contentBlocks: [{ type: 'paragraph', text: 'Please click below to verify.' }]
+                }
+              }
+            })
+          });
+        }
+
+        if (url.includes('/observation-window')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ success: true })
+          });
+        }
+
+        if (
+          (url === '/api/sessions' || url.endsWith('/api/sessions')) &&
+          options?.method === 'POST'
+        ) {
+          sessionCreateCount++;
+          const body = JSON.parse(options.body || '{}');
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({
+              success: true,
+              sessionId: `sess-step4-id-${sessionCreateCount}`,
+              session: {
+                sessionId: `sess-step4-id-${sessionCreateCount}`,
+                scenarioId: body.scenarioId || 'scen-step4-test',
+                channel: 'email',
+                status: 'active',
+                attackClassification: body.attackClassification || null
+              }
+            })
+          });
+        }
+
+        if (url.includes('/status')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              session: { sessionId: `sess-step4-id-${sessionCreateCount}`, status: 'reported' }
+            })
+          });
+        }
+
+        if (url.includes('/score')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              scoreRecord: {
+                sessionId: `sess-step4-id-${sessionCreateCount}`,
+                score: 95,
+                riskLevel: 'low',
+                outcome: 'positive'
+              }
+            })
+          });
+        }
+
+        if (url.includes('/report')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              report: {
+                sessionId: `sess-step4-id-${sessionCreateCount}`,
+                score: 95,
+                riskLevel: 'low',
+                summary: 'Outstanding vigilance.',
+                strengths: ['Identified and reported the suspicious spear phishing attempt.'],
+                riskyBehaviors: [],
+                threatIndicators: ['Domain spoofing'],
+                recommendations: ['Maintain current awareness.'],
+                attackClassification: {
+                  primaryType: 'spear_phishing',
+                  secondaryTechniques: ['urgency_manipulation', 'credential_phishing'],
+                  rationale: 'Targets the recipient with urgent executive credential demands.'
+                }
+              }
+            })
+          });
+        }
+
+        if (url.includes('/api/events')) {
+          return Promise.resolve({
+            ok: true,
+            status: 201,
+            json: async () => ({ success: true, event: { eventId: 'evt-step4-1' } })
+          });
+        }
+
+        return Promise.reject(new Error(`Unhandled fetch: ${url}`));
+      });
+
+      render(<App />);
+
+      // 1. Generate scenario
+      fireEvent.change(screen.getByTestId('prompt-input'), { target: { value: 'Targeted spear phishing scenario' } });
+      fireEvent.click(screen.getByTestId('generate-button'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Targeted Executive Spear Phishing')).toBeInTheDocument();
+      });
+
+      expect(sessionCreateCount).toBe(1);
+      expect(generateCount).toBe(1);
+
+      // 2. Trigger defensive positive outcome: Report Phishing
+      fireEvent.click(screen.getByText('Urgent: Verification Needed'));
+      fireEvent.click(screen.getByTitle('Report phishing or spam'));
+      fireEvent.click(screen.getByLabelText(/Suspicious Sender Address or Domain/i));
+      fireEvent.click(screen.getByText('Confirm & Report Threat'));
+
+      // Outcome notification banner appears immediately
+      await waitFor(() => {
+        expect(screen.getByTestId('outcome-notification')).toBeInTheDocument();
+        expect(screen.getByText(/Protective action recognized/i)).toBeInTheDocument();
+      });
+
+      // 3. Automatically navigates to Awareness Report view
+      await waitFor(() => {
+        expect(screen.getByTestId('report-view')).toBeInTheDocument();
+      }, { timeout: 3000 });
+
+      // Verify "View Simulation" action is NOT present
+      expect(screen.queryByTestId('back-to-simulation-btn')).not.toBeInTheDocument();
+      expect(screen.queryByText(/View Simulation/i)).not.toBeInTheDocument();
+
+      // Verify Attack Classification is rendered with proper terminology
+      expect(screen.getByTestId('report-attack-classification-section')).toBeInTheDocument();
+      const primaryEl = screen.getByTestId('report-primary-attack-type');
+      expect(primaryEl).toHaveTextContent('Spear Phishing');
+      expect(screen.getByTestId('report-secondary-techniques')).toHaveTextContent('Urgency Manipulation');
+      expect(screen.getByTestId('report-classification-rationale')).toHaveTextContent(/urgent executive credential demands/i);
+
+      // 4. Click Redo Simulation
+      const redoBtn = screen.getByTestId('redo-simulation-btn');
+      expect(redoBtn).toBeInTheDocument();
+      fireEvent.click(redoBtn);
+
+      // 5. Fresh session created without re-calling scenario generation
+      await waitFor(() => {
+        // App transitions back to simulation view
+        expect(screen.getByText('Targeted Executive Spear Phishing')).toBeInTheDocument();
+        expect(screen.getByTestId('session-status-badge')).toHaveTextContent(/Status: active/i);
+      });
+
+      expect(sessionCreateCount).toBe(2);
+      expect(generateCount).toBe(1); // Groq generator NOT called again
     });
   });
 });

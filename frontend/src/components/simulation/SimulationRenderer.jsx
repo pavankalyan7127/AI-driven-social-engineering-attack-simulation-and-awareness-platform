@@ -17,6 +17,152 @@ const SUPPORTED_CHANNELS = {
 };
 
 /**
+ * Checks whether an event type string matches a condition's rule or canonical alias.
+ */
+function doesEventMatchRule(rawType, condTypeRaw) {
+  if (!condTypeRaw) return false;
+  const condType = String(condTypeRaw).toLowerCase().trim();
+
+  // Direct match
+  if (rawType === condType) return true;
+
+  // Canonical aliases: links
+  const linkEvents = ['simulated_link_clicked', 'virtual_link_clicked', 'link_clicked'];
+  if (linkEvents.includes(condType) && linkEvents.includes(rawType)) return true;
+
+  // Canonical aliases: form submission & credential entry
+  const formEvents = ['simulated_form_submitted', 'credential_submitted', 'form_submitted'];
+  if (formEvents.includes(condType) && formEvents.includes(rawType)) return true;
+
+  // Canonical aliases: messaging / replies
+  const messageEvents = ['reply_sent', 'message_sent'];
+  if (messageEvents.includes(condType) && messageEvents.includes(rawType)) return true;
+
+  // Canonical aliases: attachments
+  const attachmentEvents = ['attachment_opened', 'attachment_interaction'];
+  if (attachmentEvents.includes(condType) && attachmentEvents.includes(rawType)) return true;
+
+  // Canonical aliases: reporting
+  if (
+    (condType === 'threat_reported' || condType.startsWith('user_reported_')) &&
+    (rawType === 'threat_reported' || rawType.startsWith('user_reported_'))
+  ) {
+    return true;
+  }
+
+  // Canonical aliases: safe exit & defensive message disposal
+  const safeExitEvents = [
+    'safe_exit',
+    'user_blocked_sender',
+    'message_deleted',
+    'message_archived'
+  ];
+  if (safeExitEvents.includes(condType) && safeExitEvents.includes(rawType)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Evaluates whether an interaction event matches a scenario termination condition.
+ * Returns { condition, polarity: 'positive' | 'negative' } or null.
+ */
+export function matchesTerminationCondition(event, terminationRules) {
+  if (!event || !event.eventType) return null;
+
+  const rawType = String(event.eventType).toLowerCase().trim();
+
+  // Passive viewing events must NEVER trigger automatic termination
+  const passiveEvents = [
+    'message_opened',
+    'conversation_opened',
+    'virtual_page_viewed',
+    'scenario_viewed',
+    'interaction_recorded',
+    'warning_sign_selected'
+  ];
+  if (passiveEvents.includes(rawType)) return null;
+
+  const rules = terminationRules || {};
+
+  // 1. Negative conditions (risky behaviors that end the simulation)
+  const negativeConditions = Array.isArray(rules.negativeConditions)
+    ? rules.negativeConditions
+    : (Array.isArray(rules.negativeRules) ? rules.negativeRules : []);
+
+  for (const condition of negativeConditions) {
+    if (!condition) continue;
+    if (doesEventMatchRule(rawType, condition.eventType)) {
+      return { condition, polarity: 'negative' };
+    }
+  }
+
+  // 2. Positive conditions (defensive actions explicitly declared in scenario rules)
+  const positiveConditions = Array.isArray(rules.positiveConditions)
+    ? rules.positiveConditions
+    : (Array.isArray(rules.positiveRules) ? rules.positiveRules : []);
+
+  for (const condition of positiveConditions) {
+    if (!condition) continue;
+    if (doesEventMatchRule(rawType, condition.eventType)) {
+      return { condition, polarity: 'positive' };
+    }
+  }
+
+  // 3. Universal defensive/protective actions across all channels:
+  // Even if the scenario's positiveConditions only declared 'threat_reported',
+  // deleting or archiving the phishing email, blocking the suspicious contact/sender,
+  // or safely exiting the simulation is an authoritative protective victory.
+  const inherentProtectiveActions = {
+    threat_reported: {
+      id: 'rule_pos_threat_reported',
+      eventType: 'threat_reported',
+      points: 30,
+      label: 'Reported security threat',
+      explanation: 'User identified the simulated social engineering attack and reported it.'
+    },
+    message_deleted: {
+      id: 'rule_pos_message_deleted',
+      eventType: 'message_deleted',
+      points: 25,
+      label: 'Deleted suspicious email',
+      explanation: 'User recognized the deceptive cues and deleted the suspicious email.'
+    },
+    message_archived: {
+      id: 'rule_pos_message_archived',
+      eventType: 'message_archived',
+      points: 20,
+      label: 'Archived suspicious email',
+      explanation: 'User recognized and archived the deceptive email away from the inbox.'
+    },
+    safe_exit: {
+      id: 'rule_pos_safe_exit',
+      eventType: 'safe_exit',
+      points: 25,
+      label: 'Safely exited scenario',
+      explanation: 'User safely exited without engaging with the deceptive attack vector.'
+    },
+    user_blocked_sender: {
+      id: 'rule_pos_user_blocked_sender',
+      eventType: 'user_blocked_sender',
+      points: 25,
+      label: 'Blocked suspicious contact',
+      explanation: 'User blocked the sender to prevent further social engineering attempts.'
+    }
+  };
+
+  if (inherentProtectiveActions[rawType]) {
+    return {
+      condition: inherentProtectiveActions[rawType],
+      polarity: 'positive'
+    };
+  }
+
+  return null;
+}
+
+/**
  * SimulationRenderer Component
  * 
  * Central dispatcher component that dynamically mounts the appropriate attack
@@ -76,51 +222,12 @@ export default function SimulationRenderer({
 
   // Guard against duplicate completion callbacks across rerenders
   const hasCompletedRef = useRef(false);
-
-  // Normalized Action Event Handler
-  const handleNormalizedAction = useCallback(
-    (event) => {
-      const activeCallback = onAction || onEvent;
-
-      const normalizedEvent = {
-        ...event,
-        scenarioId: event?.scenarioId || scenario.scenarioId || scenario.id || 'unnamed-scenario',
-        sessionId: event?.sessionId || sessionId || scenario.sessionId || 'default-session',
-        targetId: event?.targetId || scenario.targetId,
-        timestamp: event?.timestamp || new Date().toISOString(),
-        metadata: {
-          channel,
-          ...event?.metadata
-        }
-      };
-
-      // Dispatch telemetry event to backend if a valid sessionId exists
-      if (sessionId && sessionId !== 'sess-sim-default' && event?.eventType) {
-        sendTelemetryEvent({
-          sessionId,
-          eventType: event.eventType,
-          metadata: normalizedEvent.metadata,
-          clientTimestamp: normalizedEvent.timestamp
-        }).catch((err) => {
-          console.warn('[SimulationRenderer] Telemetry send error:', err);
-        });
-      }
-
-      if (typeof activeCallback === 'function') {
-        try {
-          activeCallback(normalizedEvent);
-        } catch (err) {
-          console.error('[SimulationRenderer] Error dispatching event callback:', err);
-        }
-      }
-    },
-    [channel, onAction, onEvent, scenario, sessionId]
-  );
+  const isTerminatingRef = useRef(false);
 
   // Normalized Completion Handler
   const handleNormalizedComplete = useCallback(
     (result = {}) => {
-      if (typeof onComplete !== 'function') return;
+      if (typeof onComplete !== 'function' || hasCompletedRef.current) return;
 
       const normalizedResult = {
         status: result.status || 'completed',
@@ -140,6 +247,75 @@ export default function SimulationRenderer({
       }
     },
     [channel, onComplete, scenario, sessionId]
+  );
+
+  // Normalized Action Event Handler
+  const handleNormalizedAction = useCallback(
+    (event) => {
+      const activeCallback = onAction || onEvent;
+
+      const normalizedEvent = {
+        ...event,
+        scenarioId: event?.scenarioId || scenario.scenarioId || scenario.id || 'unnamed-scenario',
+        sessionId: event?.sessionId || sessionId || scenario.sessionId || 'default-session',
+        targetId: event?.targetId || scenario.targetId,
+        timestamp: event?.timestamp || new Date().toISOString(),
+        metadata: {
+          channel,
+          ...event?.metadata
+        }
+      };
+
+      // Dispatch telemetry event to backend if a valid sessionId exists
+      let telemetryPromise = Promise.resolve();
+      if (sessionId && sessionId !== 'sess-sim-default' && event?.eventType) {
+        telemetryPromise = sendTelemetryEvent({
+          sessionId,
+          eventType: event.eventType,
+          metadata: normalizedEvent.metadata,
+          clientTimestamp: normalizedEvent.timestamp
+        }).catch((err) => {
+          console.warn('[SimulationRenderer] Telemetry send error:', err);
+        });
+      }
+
+      if (typeof activeCallback === 'function') {
+        try {
+          activeCallback(normalizedEvent);
+        } catch (err) {
+          console.error('[SimulationRenderer] Error dispatching event callback:', err);
+        }
+      }
+
+      // Check if event triggers a scenario termination rule (e.g., form submit, phishing link click, reply)
+      const terminationRules = scenario?.terminationRules;
+      const matchedTerm = matchesTerminationCondition(normalizedEvent, terminationRules);
+
+      if (matchedTerm && !isTerminatingRef.current && !hasCompletedRef.current) {
+        isTerminatingRef.current = true;
+        let targetStatus = 'completed';
+        if (matchedTerm.polarity === 'positive') {
+          targetStatus = (normalizedEvent.eventType === 'threat_reported' || String(normalizedEvent.eventType).startsWith('user_reported_'))
+            ? 'reported'
+            : 'safe_exit';
+        }
+
+        // Ensure telemetry event is committed to backend MongoDB before completing
+        telemetryPromise.finally(() => {
+          setTimeout(() => {
+            handleNormalizedComplete({
+              status: targetStatus,
+              action: normalizedEvent.eventType,
+              scenarioId: normalizedEvent.scenarioId,
+              sessionId: normalizedEvent.sessionId,
+              matchedCondition: matchedTerm.condition,
+              reason: matchedTerm.condition.reason || matchedTerm.condition.explanation || matchedTerm.condition.label || 'Scenario termination condition triggered.'
+            });
+          }, 200);
+        });
+      }
+    },
+    [channel, handleNormalizedComplete, onAction, onEvent, scenario, sessionId]
   );
 
   // 3. Explicit Channel Dispatcher Mapping

@@ -170,4 +170,168 @@ describe('SimulationRenderer Component', () => {
       })
     );
   });
+
+  // 7. Automatic Termination Condition Evaluation
+  it('automatically triggers onComplete when a negative termination condition occurs', async () => {
+    vi.useFakeTimers();
+    const handleComplete = vi.fn();
+    const handleAction = vi.fn();
+
+    const scenarioWithRules = {
+      ...sampleWebsiteScenario,
+      terminationRules: {
+        positiveConditions: [
+          { id: 'rule_pos_rep', eventType: 'threat_reported', points: 30 }
+        ],
+        negativeConditions: [
+          { id: 'rule_neg_sub', eventType: 'simulated_form_submitted', points: 35, explanation: 'Submitted unverified credentials.' }
+        ]
+      }
+    };
+
+    render(
+      <SimulationRenderer
+        scenario={scenarioWithRules}
+        sessionId="test-session-auto-term"
+        onAction={handleAction}
+        onComplete={handleComplete}
+      />
+    );
+
+    // Enter credentials and submit
+    const userInput = screen.getByPlaceholderText(/23BCE1024/i);
+    fireEvent.change(userInput, { target: { value: 'student123' } });
+
+    const submitBtn = screen.getByText('Verify & Continue');
+    fireEvent.click(submitBtn);
+
+    // Fast-forward past the telemetry and buffer timer
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(handleComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'completed',
+        action: 'simulated_form_submitted',
+        channel: 'website',
+        sessionId: 'test-session-auto-term',
+        reason: 'Submitted unverified credentials.'
+      })
+    );
+    vi.useRealTimers();
+  });
+
+  it('automatically triggers onComplete when an email phishing link is clicked', async () => {
+    vi.useFakeTimers();
+    const handleComplete = vi.fn();
+
+    const emailScenarioWithRules = {
+      ...sampleScenario,
+      terminationRules: {
+        positiveConditions: [
+          { id: 'rule_pos_rep', eventType: 'threat_reported', points: 30 }
+        ],
+        negativeConditions: [
+          { id: 'rule_neg_link', eventType: 'simulated_link_clicked', points: 25, explanation: 'Clicked fraudulent verification link.' }
+        ]
+      }
+    };
+
+    render(
+      <SimulationRenderer
+        scenario={emailScenarioWithRules}
+        sessionId="test-session-email-link"
+        onComplete={handleComplete}
+      />
+    );
+
+    // Open target email
+    const emailRow = screen.getByText('VIT Events - Password reset');
+    fireEvent.click(emailRow);
+
+    // Click simulated phishing action button in email
+    const linkBtn = screen.getByText('Reset and Verify Password Now');
+    fireEvent.click(linkBtn);
+
+    // Fast-forward past buffer timer
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(handleComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'completed',
+        action: 'simulated_link_clicked',
+        channel: 'email',
+        sessionId: 'test-session-email-link',
+        reason: 'Clicked fraudulent verification link.'
+      })
+    );
+    vi.useRealTimers();
+  });
+
+  it('automatically triggers onComplete with safe_exit when an email is deleted', async () => {
+    vi.useFakeTimers();
+    const handleComplete = vi.fn();
+
+    render(
+      <SimulationRenderer
+        scenario={sampleScenario}
+        sessionId="test-session-email-delete"
+        onComplete={handleComplete}
+      />
+    );
+
+    // Open target email
+    const emailRow = screen.getByText('VIT Events - Password reset');
+    fireEvent.click(emailRow);
+
+    // Click Delete button in toolbar
+    const deleteBtn = screen.getByTitle('Delete');
+    fireEvent.click(deleteBtn);
+
+    // Fast-forward past buffer timer
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(handleComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'safe_exit',
+        action: 'message_deleted',
+        channel: 'email',
+        sessionId: 'test-session-email-delete'
+      })
+    );
+    vi.useRealTimers();
+  });
+
+  it('automatically triggers onComplete with safe_exit when an email is archived', async () => {
+    vi.useFakeTimers();
+    const handleComplete = vi.fn();
+
+    render(
+      <SimulationRenderer
+        scenario={sampleScenario}
+        sessionId="test-session-email-archive"
+        onComplete={handleComplete}
+      />
+    );
+
+    // Open target email
+    const emailRow = screen.getByText('VIT Events - Password reset');
+    fireEvent.click(emailRow);
+
+    // Click Archive button in toolbar
+    const archiveBtn = screen.getByTitle('Archive');
+    fireEvent.click(archiveBtn);
+
+    // Fast-forward past buffer timer
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(handleComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'safe_exit',
+        action: 'message_archived',
+        channel: 'email',
+        sessionId: 'test-session-email-archive'
+      })
+    );
+    vi.useRealTimers();
+  });
 });

@@ -15,8 +15,104 @@ import {
   Eye,
   Check,
   XCircle,
-  HelpCircle
+  HelpCircle,
+  RotateCcw,
+  Target
 } from 'lucide-react';
+
+/**
+ * Cybersecurity taxonomy reference mapping for social engineering attack types.
+ */
+export const ATTACK_TAXONOMY_MAP = {
+  phishing: {
+    name: 'Phishing',
+    description: 'Deceptive mass communications intended to trick recipients into revealing sensitive data or executing untrusted actions.'
+  },
+  spear_phishing: {
+    name: 'Spear Phishing',
+    description: 'Targeted phishing attacks customized to specific individuals or organizations using researched background context.'
+  },
+  business_email_compromise: {
+    name: 'Business Email Compromise (BEC)',
+    description: 'Impersonating executives, vendors, or trusted partners to initiate fraudulent transfers or reveal sensitive operational data.'
+  },
+  smishing: {
+    name: 'Smishing (SMS Phishing)',
+    description: 'SMS-based social engineering soliciting immediate response, malicious link navigation, or fraudulent calls.'
+  },
+  vishing: {
+    name: 'Vishing (Voice Phishing)',
+    description: 'Voice and telephone social engineering aimed at extracting confidential information, credentials, or passcodes.'
+  },
+  credential_phishing: {
+    name: 'Credential Phishing',
+    description: 'Attacks specifically structured to harvest authentication credentials, single sign-on sessions, or MFA tokens.'
+  },
+  pretexting: {
+    name: 'Pretexting',
+    description: 'A fabricated scenario or persona created by an adversary to establish trust and illicitly manipulate the target.'
+  },
+  impersonation: {
+    name: 'Impersonation',
+    description: 'Assuming the identity of a known trusted individual, brand, executive, or IT department.'
+  },
+  baiting: {
+    name: 'Baiting',
+    description: 'Enticing victims with promises of goods, downloads, bonuses, or free access to compromise their environment.'
+  },
+  quid_pro_quo: {
+    name: 'Quid Pro Quo',
+    description: 'Offering a fraudulent service or technical assistance in exchange for credentials, access, or compliance.'
+  },
+  tailgating: {
+    name: 'Tailgating / Piggybacking',
+    description: 'Gaining unauthorized physical or logical access by closely following or mimicking authorized personnel.'
+  },
+  watering_hole: {
+    name: 'Watering Hole Attack',
+    description: 'Compromising or spoofing websites and resources frequently visited by targeted groups.'
+  },
+  tech_support_scam: {
+    name: 'Tech Support Scam',
+    description: 'Fraudulent tech assistance alleging nonexistent malware or security problems to obtain remote access or credentials.'
+  },
+  romance_scam: {
+    name: 'Romance Scam',
+    description: 'Manipulating affection and emotional vulnerability for financial fraud or information extraction.'
+  },
+  urgency_manipulation: {
+    name: 'Urgency Manipulation',
+    description: 'Manufactured time constraints and high-pressure threats designed to bypass critical thinking and verification.'
+  }
+};
+
+/**
+ * Formats a raw attack type string into proper cybersecurity terminology.
+ * @param {string} rawType
+ * @returns {string}
+ */
+export function formatAttackTypeName(rawType) {
+  if (!rawType || typeof rawType !== 'string') return '';
+  const key = rawType.toLowerCase().trim().replace(/[\s-]+/g, '_');
+  if (ATTACK_TAXONOMY_MAP[key]) {
+    return ATTACK_TAXONOMY_MAP[key].name;
+  }
+  return key
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/**
+ * Returns formal cybersecurity description for a given attack type.
+ * @param {string} rawType
+ * @returns {string|null}
+ */
+export function getAttackTypeDescription(rawType) {
+  if (!rawType || typeof rawType !== 'string') return null;
+  const key = rawType.toLowerCase().trim().replace(/[\s-]+/g, '_');
+  return ATTACK_TAXONOMY_MAP[key]?.description || null;
+}
 
 export default function AwarenessReportView({
   report,
@@ -27,12 +123,20 @@ export default function AwarenessReportView({
   isStale = false,
   onRetry,
   onReturnToGenerator,
-  onBackToSimulation
+  onRedoSimulation,
+  isRedoing = false,
+  attackClassification = null
 }) {
   const effectiveScore = report?.score ?? score?.score ?? 0;
   const effectiveRisk = (report?.riskLevel || score?.riskLevel || 'moderate').toLowerCase();
   const effectiveChannel = report?.channel || session?.channel || 'simulation';
   const effectiveOutcome = session?.status || 'completed';
+
+  const effectiveClassification =
+    attackClassification ||
+    report?.attackClassification ||
+    session?.attackClassification ||
+    null;
 
   const riskBadgeStyles = {
     low: {
@@ -116,14 +220,15 @@ export default function AwarenessReportView({
                 <span>Retry Report Generation</span>
               </button>
             )}
-            {onBackToSimulation && (
+            {onRedoSimulation && (
               <button
-                onClick={onBackToSimulation}
-                data-testid="back-to-simulation-btn"
-                className="w-full sm:w-auto px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                onClick={onRedoSimulation}
+                disabled={isRedoing}
+                data-testid="redo-simulation-btn"
+                className="w-full sm:w-auto px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                <Eye className="w-3.5 h-3.5" />
-                <span>Return to Simulation</span>
+                <RotateCcw className={`w-3.5 h-3.5 ${isRedoing ? 'animate-spin' : ''}`} />
+                <span>{isRedoing ? 'Starting...' : 'Redo Simulation'}</span>
               </button>
             )}
             {onReturnToGenerator && (
@@ -162,14 +267,15 @@ export default function AwarenessReportView({
             </button>
           )}
 
-          {onBackToSimulation && (
+          {onRedoSimulation && (
             <button
-              onClick={onBackToSimulation}
-              data-testid="back-to-simulation-btn"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition-colors font-medium cursor-pointer"
+              onClick={onRedoSimulation}
+              disabled={isRedoing}
+              data-testid="redo-simulation-btn"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white transition-colors font-medium cursor-pointer shadow-sm"
             >
-              <Eye className="w-3.5 h-3.5 text-emerald-400" />
-              <span>View Simulation</span>
+              <RotateCcw className={`w-3.5 h-3.5 ${isRedoing ? 'animate-spin' : ''}`} />
+              <span>{isRedoing ? 'Starting...' : 'Redo Simulation'}</span>
             </button>
           )}
         </div>
@@ -271,6 +377,84 @@ export default function AwarenessReportView({
               cybersecurity competence.
             </p>
           </div>
+        </section>
+
+        {/* Section: Social Engineering Attack Classification */}
+        <section
+          data-testid="report-attack-classification-section"
+          className="rounded-2xl bg-gray-900 border border-indigo-900/40 p-6 shadow-lg relative overflow-hidden"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-indigo-400 uppercase tracking-wider mb-4">
+            <Target className="w-4 h-4 text-indigo-400" />
+            <span>Social Engineering Attack Classification</span>
+          </div>
+
+          {effectiveClassification && effectiveClassification.primaryType ? (
+            <div className="space-y-4">
+              {/* Primary Attack Type */}
+              <div
+                data-testid="report-primary-attack-type"
+                className="p-4 rounded-xl bg-indigo-950/30 border border-indigo-800/40"
+              >
+                <div className="text-[11px] font-mono uppercase text-indigo-300 tracking-wider mb-1">
+                  Primary Attack Type
+                </div>
+                <div className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                  <span>{formatAttackTypeName(effectiveClassification.primaryType)}</span>
+                  <span className="text-xs px-2 py-0.5 rounded font-mono font-normal bg-indigo-900/60 text-indigo-200 border border-indigo-700/60">
+                    {effectiveClassification.primaryType}
+                  </span>
+                </div>
+                {getAttackTypeDescription(effectiveClassification.primaryType) && (
+                  <p className="text-xs text-indigo-200/90 mt-1.5 leading-relaxed">
+                    {getAttackTypeDescription(effectiveClassification.primaryType)}
+                  </p>
+                )}
+              </div>
+
+              {/* Secondary Techniques (if present) */}
+              {effectiveClassification.secondaryTechniques &&
+                effectiveClassification.secondaryTechniques.length > 0 && (
+                  <div data-testid="report-secondary-techniques" className="space-y-2">
+                    <div className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                      Secondary Attack Techniques
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {effectiveClassification.secondaryTechniques.map((technique, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-800 text-indigo-300 border border-indigo-900/60 flex items-center gap-1.5 shadow-sm"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                          <span>{formatAttackTypeName(technique)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* Why This Classification Fits (Rationale) */}
+              <div
+                data-testid="report-classification-rationale"
+                className="p-3.5 rounded-xl bg-gray-950/70 border border-gray-800 text-xs text-gray-300 leading-relaxed"
+              >
+                <span className="font-semibold text-indigo-300 mr-1.5">
+                  Why This Classification Fits:
+                </span>
+                <span>
+                  {effectiveClassification.rationale ||
+                    'Observed scenario elements and vector behaviors align with this standard attack classification.'}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div
+              data-testid="report-classification-fallback"
+              className="p-4 rounded-xl bg-gray-950/60 border border-gray-800 text-xs text-gray-400 italic"
+            >
+              Classification unavailable for this scenario.
+            </div>
+          )}
         </section>
 
         {/* Section F / Executive Learning Summary */}
@@ -457,9 +641,22 @@ export default function AwarenessReportView({
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">
+            {onRedoSimulation && (
+              <button
+                onClick={onRedoSimulation}
+                disabled={isRedoing}
+                data-testid="bottom-redo-simulation-btn"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-md"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 ${isRedoing ? 'animate-spin' : ''}`} />
+                <span>{isRedoing ? 'Restarting Simulation...' : 'Redo Simulation'}</span>
+              </button>
+            )}
+
             {onReturnToGenerator && (
               <button
                 onClick={onReturnToGenerator}
+                data-testid="bottom-return-to-generator-btn"
                 className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-md"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />

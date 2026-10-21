@@ -1,69 +1,35 @@
 import React, { useState, useRef } from 'react';
 import {
   Shield,
-  Mail,
-  MessageSquare,
-  Smartphone,
-  Globe,
   Upload,
   X,
   AlertTriangle,
   Loader2,
   Sparkles,
   ArrowRight,
-  Info
+  Info,
+  Cpu
 } from 'lucide-react';
-
-const CHANNELS = [
-  {
-    id: 'email',
-    name: 'Email',
-    icon: Mail,
-    color: 'blue',
-    description: 'Spear phishing, fake security notices, and credential harvesting in a Gmail-style interface.'
-  },
-  {
-    id: 'chat',
-    name: 'Chat',
-    icon: MessageSquare,
-    color: 'emerald',
-    description: 'Workplace impersonation, urgent helpdesk requests, and conversational credential extraction.'
-  },
-  {
-    id: 'sms',
-    name: 'SMS',
-    icon: Smartphone,
-    color: 'indigo',
-    description: 'Smishing attacks, urgent bank fraud alerts, and fake delivery updates on a mobile screen.'
-  },
-  {
-    id: 'website',
-    name: 'Website',
-    icon: Globe,
-    color: 'purple',
-    description: 'Cloned login portals, fake verification pages, and credential harvesters in a virtual browser.'
-  }
-];
 
 const PRESETS = [
   {
     label: 'University Phishing Email',
-    channel: 'email',
+    hint: 'Email',
     prompt: 'Simulate a spear phishing email from the university IT department warning students that their account will be deactivated unless they verify credentials within 24 hours.'
   },
   {
     label: 'Helpdesk Chat Impersonation',
-    channel: 'chat',
+    hint: 'Chat',
     prompt: 'Simulate an urgent message from corporate IT support claiming suspicious account activity and requesting the user provide their multi-factor authentication (MFA) code.'
   },
   {
     label: 'Bank Fraud Alert SMS',
-    channel: 'sms',
+    hint: 'SMS',
     prompt: 'Simulate a smishing SMS from a major bank claiming an unauthorized transaction of $849.00 and providing a link to contest the charge.'
   },
   {
     label: 'Single Sign-On Cloned Portal',
-    channel: 'website',
+    hint: 'Website',
     prompt: 'Simulate a cloned corporate single sign-on (SSO) login page that prompts for university or enterprise credentials with simulated security badges.'
   }
 ];
@@ -74,11 +40,9 @@ const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp
 
 export default function Home({
   onGenerateScenario,
-  initialPrompt = '',
-  initialChannel = 'email'
+  initialPrompt = ''
 }) {
   const [prompt, setPrompt] = useState(initialPrompt);
-  const [selectedChannel, setSelectedChannel] = useState(initialChannel);
   const [images, setImages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
@@ -139,7 +103,6 @@ export default function Home({
 
   const handleApplyPreset = (preset) => {
     setPrompt(preset.prompt);
-    setSelectedChannel(preset.channel);
     setErrorMessage(null);
   };
 
@@ -153,7 +116,6 @@ export default function Home({
     try {
       const formData = new FormData();
       formData.append('prompt', trimmedPrompt);
-      formData.append('channel', selectedChannel);
 
       images.forEach((imgObj) => {
         formData.append('images', imgObj.file);
@@ -171,16 +133,21 @@ export default function Home({
         throw new Error(errText);
       }
 
-      // Initialize and persist simulation session in MongoDB
-      const scenarioId = data.scenario?.scenarioId || data.scenario?.id || `scen-${selectedChannel}-${Date.now()}`;
-      const channel = data.scenario?.channel || selectedChannel;
+      // Initialize and persist simulation session in MongoDB using AI-predicted channel
+      const scenarioChannel = data.scenario?.channel || 'email';
+      const scenarioId = data.scenario?.scenarioId || data.scenario?.id || `scen-${scenarioChannel}-${Date.now()}`;
 
       const sessionResponse = await fetch('/api/sessions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ scenarioId, channel })
+        body: JSON.stringify({
+          scenarioId,
+          channel: scenarioChannel,
+          terminationRules: data.scenario?.terminationRules || null,
+          attackClassification: data.scenario?.attackClassification || null
+        })
       });
 
       const sessionData = await sessionResponse.json();
@@ -196,7 +163,7 @@ export default function Home({
           modelUsed: data.modelUsed,
           imageAnalysis: data.imageAnalysis,
           prompt: trimmedPrompt,
-          channel: selectedChannel,
+          channel: scenarioChannel,
           session: sessionData.session
         });
       }
@@ -233,14 +200,17 @@ export default function Home({
       {/* Main Content Area */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8 flex flex-col gap-8">
         {/* Intro Hero */}
-        <section className="text-center space-y-2">
+        <section className="text-center space-y-3">
           <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             Design and Launch Attack Simulations
           </h2>
           <p className="text-sm sm:text-base text-gray-400 max-w-2xl mx-auto">
-            Describe the attack vector in natural language. Our AI generates a fully-interactive,
-            educational simulation tailored to your chosen communication channel.
+            Describe any social engineering attack in natural language. Our AI automatically classifies the threat, predicts the optimal simulation channel, and constructs interactive defense rules.
           </p>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-950/50 border border-blue-500/30 text-blue-300 text-xs font-medium">
+            <Cpu className="w-3.5 h-3.5 text-blue-400" />
+            <span>Autonomous Channel Prediction & Termination Rules Engine</span>
+          </div>
         </section>
 
         {/* Quick Presets */}
@@ -260,7 +230,7 @@ export default function Home({
                 <div className="text-xs font-semibold text-gray-200 group-hover:text-blue-400 flex items-center justify-between">
                   <span>{preset.label}</span>
                   <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
-                    {preset.channel}
+                    {preset.hint}
                   </span>
                 </div>
                 <div className="text-[11px] text-gray-500 line-clamp-2 leading-relaxed">
@@ -273,68 +243,14 @@ export default function Home({
 
         {/* Generator Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Step 1: Channel Selector */}
-          <div className="space-y-3">
-            <label className="block text-sm font-semibold text-gray-200">
-              1. Select Simulation Channel
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {CHANNELS.map((ch) => {
-                const isSelected = selectedChannel === ch.id;
-                const IconComponent = ch.icon;
-
-                return (
-                  <button
-                    key={ch.id}
-                    type="button"
-                    data-testid={`channel-${ch.id}`}
-                    onClick={() => setSelectedChannel(ch.id)}
-                    className={`relative p-4 rounded-xl border text-left transition-all flex flex-col gap-2.5 ${
-                      isSelected
-                        ? 'bg-blue-950/30 border-blue-500 shadow-md shadow-blue-500/10 ring-1 ring-blue-500'
-                        : 'bg-gray-900/60 border-gray-800 hover:border-gray-700 hover:bg-gray-900'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div
-                        className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                          isSelected
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-800 text-gray-400'
-                        }`}
-                      >
-                        <IconComponent className="w-5 h-5" />
-                      </div>
-                      {isSelected && (
-                        <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse" />
-                      )}
-                    </div>
-                    <div>
-                      <div
-                        className={`text-sm font-bold ${
-                          isSelected ? 'text-white' : 'text-gray-300'
-                        }`}
-                      >
-                        {ch.name}
-                      </div>
-                      <p className="text-xs text-gray-400 mt-1 leading-relaxed">
-                        {ch.description}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Step 2: Prompt Input */}
+          {/* Prompt Input */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label
                 htmlFor="attack-prompt"
                 className="block text-sm font-semibold text-gray-200"
               >
-                2. Describe the Attack Scenario
+                Describe the Attack Scenario
               </label>
               <span
                 data-testid="char-counter"
@@ -377,11 +293,11 @@ export default function Home({
             )}
           </div>
 
-          {/* Step 3: Reference Image Upload (Optional) */}
+          {/* Reference Image Upload (Optional) */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="block text-sm font-semibold text-gray-200">
-                3. Reference Images (Optional)
+                Reference Images (Optional)
               </label>
               <span className="text-xs text-gray-400">
                 Max 3 images (PNG, JPEG, WebP, 5MB each)

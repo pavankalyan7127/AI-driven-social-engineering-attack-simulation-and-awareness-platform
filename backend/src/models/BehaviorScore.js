@@ -82,6 +82,26 @@ const behaviorScoreSchema = new mongoose.Schema(
       enum: ['provisional', 'final'],
       default: 'final'
     },
+    outcome: {
+      type: String,
+      enum: ['positive', 'negative', 'incomplete', 'abandoned', null],
+      default: null,
+      index: true
+    },
+    triggeredConditionId: {
+      type: String,
+      default: null,
+      trim: true
+    },
+    formulaVersion: {
+      type: String,
+      required: true,
+      default: '2.0.0'
+    },
+    outcomeEvidence: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
     revision: {
       type: Number,
       required: true,

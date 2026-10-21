@@ -2,6 +2,7 @@ import Session from '../models/Session.js';
 import SimulationEvent from '../models/SimulationEvent.js';
 import BehaviorScore from '../models/BehaviorScore.js';
 import { SCORING_CONFIG, getRiskLevel } from '../config/scoringConfig.js';
+import { computeScenarioScore, evaluateTerminationRules } from './outcomeService.js';
 
 /**
  * Deterministically normalizes simulation events into behavior categories.
@@ -48,6 +49,7 @@ function normalizeEventToCategory(event) {
       return 'threat_reported';
 
     case 'safe_exit':
+    case 'user_blocked_sender':
       return 'safe_exit';
 
     case 'scenario_viewed':
@@ -265,7 +267,57 @@ export async function scoreSession(sessionId) {
   }
 
   // 3. Compute deterministic score
-  const computed = calculateSecurityScore(events, session);
+  // If session has been evaluated with an outcome or terminationRules, compute scenario-driven score
+  let computed;
+  if (session.outcome || session.terminationRules) {
+    let outcomeVal = session.outcome;
+    let matchedCondition = null;
+    let outcomeReason = '';
+
+    if (!outcomeVal && session.terminationRules) {
+      const evalResult = evaluateTerminationRules(events, session.terminationRules, session.channel);
+      if (evalResult.matched) {
+        outcomeVal = evalResult.outcome;
+        matchedCondition = evalResult.condition;
+        outcomeReason = evalResult.reason;
+      }
+    }
+
+    if (!outcomeVal) {
+      if (session.status === 'safe_exit' || session.status === 'reported') {
+        outcomeVal = 'positive';
+      } else if (session.status === 'completed') {
+        outcomeVal = 'negative';
+      } else if (session.status === 'abandoned') {
+        outcomeVal = 'abandoned';
+      } else {
+        outcomeVal = 'incomplete';
+      }
+    }
+
+    const outcomeResult = {
+      outcome: outcomeVal,
+      condition: matchedCondition ||
+                 session.terminationRules?.positiveConditions?.find(c => c.id === session.triggeredConditionId) ||
+                 session.terminationRules?.negativeConditions?.find(c => c.id === session.triggeredConditionId) || null,
+      reason: outcomeReason || (outcomeVal === 'positive'
+        ? 'Demonstrated defensive security behavior.'
+        : outcomeVal === 'negative'
+        ? 'Fell for simulated threat vector.'
+        : 'Session concluded without critical attack interaction.')
+    };
+    computed = computeScenarioScore(outcomeResult, session.terminationRules, events);
+
+    if (!session.outcome) {
+      session.outcome = outcomeVal;
+      if (outcomeResult.condition?.id) {
+        session.triggeredConditionId = outcomeResult.condition.id;
+      }
+      await session.save();
+    }
+  } else {
+    computed = calculateSecurityScore(events, session);
+  }
   const now = new Date();
 
   // 4. Upsert BehaviorScore in MongoDB
@@ -283,6 +335,10 @@ export async function scoreSession(sessionId) {
         riskLevel: computed.riskLevel,
         factors: computed.factors,
         scoringVersion: computed.scoringVersion,
+        formulaVersion: computed.formulaVersion || '1.0.0',
+        outcome: computed.outcome || session.outcome || null,
+        triggeredConditionId: computed.triggeredConditionId || session.triggeredConditionId || null,
+        outcomeEvidence: computed.outcomeEvidence || null,
         calculatedAt: now,
         eventCount: computed.eventCount,
         status: computed.status,

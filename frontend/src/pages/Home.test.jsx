@@ -17,43 +17,29 @@ describe('Home Page Component', () => {
   });
 
   // Test 1: Renders landing page structure
-  it('renders landing page with title, prompt textarea, channel selector, and generate button', () => {
+  it('renders landing page with title, prompt textarea, intelligence badge, and generate button', () => {
     render(<Home onGenerateScenario={mockOnGenerateScenario} />);
 
     expect(screen.getByText(/AI Social Engineering Simulator/i)).toBeInTheDocument();
     expect(screen.getByText(/Design and Launch Attack Simulations/i)).toBeInTheDocument();
+    expect(screen.getByText(/Autonomous Channel Prediction & Termination Rules Engine/i)).toBeInTheDocument();
     expect(screen.getByTestId('prompt-input')).toBeInTheDocument();
-    expect(screen.getByTestId('channel-email')).toBeInTheDocument();
-    expect(screen.getByTestId('channel-chat')).toBeInTheDocument();
-    expect(screen.getByTestId('channel-sms')).toBeInTheDocument();
-    expect(screen.getByTestId('channel-website')).toBeInTheDocument();
     expect(screen.getByTestId('generate-button')).toBeInTheDocument();
   });
 
-  // Test 2: Channel selection
-  it('allows selecting each of the 4 simulation channels', () => {
+  // Test 2: Channel prediction info and presets
+  it('displays quick-start presets with channel hints without requiring manual channel selection', () => {
     render(<Home onGenerateScenario={mockOnGenerateScenario} />);
 
-    const emailBtn = screen.getByTestId('channel-email');
-    const chatBtn = screen.getByTestId('channel-chat');
-    const smsBtn = screen.getByTestId('channel-sms');
-    const websiteBtn = screen.getByTestId('channel-website');
+    // Presets exist
+    expect(screen.getByText('University Phishing Email')).toBeInTheDocument();
+    expect(screen.getByText('Helpdesk Chat Impersonation')).toBeInTheDocument();
+    expect(screen.getByText('Bank Fraud Alert SMS')).toBeInTheDocument();
+    expect(screen.getByText('Single Sign-On Cloned Portal')).toBeInTheDocument();
 
-    // Click Chat
-    fireEvent.click(chatBtn);
-    expect(chatBtn).toHaveClass('border-blue-500');
-
-    // Click SMS
-    fireEvent.click(smsBtn);
-    expect(smsBtn).toHaveClass('border-blue-500');
-
-    // Click Website
-    fireEvent.click(websiteBtn);
-    expect(websiteBtn).toHaveClass('border-blue-500');
-
-    // Click Email
-    fireEvent.click(emailBtn);
-    expect(emailBtn).toHaveClass('border-blue-500');
+    // Channel selection cards should no longer be present
+    expect(screen.queryByTestId('channel-email')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('channel-chat')).not.toBeInTheDocument();
   });
 
   // Test 3: Prompt validation (<5 chars disables button, shows inline warning)
@@ -190,8 +176,8 @@ describe('Home Page Component', () => {
     expect(screen.getByTestId('retry-button')).toBeInTheDocument();
   });
 
-  // Test 10: Presets populate prompt and channel
-  it('populates prompt and channel when a quick-start preset is clicked', () => {
+  // Test 10: Presets populate prompt
+  it('populates prompt when a quick-start preset is clicked', () => {
     render(<Home onGenerateScenario={mockOnGenerateScenario} />);
 
     const presetBtn = screen.getByText('Bank Fraud Alert SMS');
@@ -199,9 +185,6 @@ describe('Home Page Component', () => {
 
     const promptInput = screen.getByTestId('prompt-input');
     expect(promptInput.value).toMatch(/smishing SMS from a major bank/i);
-
-    const smsBtn = screen.getByTestId('channel-sms');
-    expect(smsBtn).toHaveClass('border-blue-500');
   });
 
   // Test 11: Preventing simulation launch when session creation fails

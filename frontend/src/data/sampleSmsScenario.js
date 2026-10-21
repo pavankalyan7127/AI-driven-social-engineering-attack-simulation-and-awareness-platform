@@ -14,6 +14,41 @@ export const sampleSmsScenario = {
   category: "Smishing / Credential Harvesting",
   difficulty: "Medium",
   initialView: "list", // 'list' or 'chat'
+  attackClassification: {
+    primaryType: "smishing",
+    secondaryTechniques: ["urgency_manipulation", "credential_phishing"],
+    rationale: "Urgent fake bank fraud SMS claiming imminent debit card suspension unless dispute link is clicked."
+  },
+  terminationRules: {
+    positiveRules: [
+      {
+        trigger: "event",
+        eventType: "user_reported_sms",
+        scoreAdjustment: 25,
+        reason: "User flagged fraudulent bank fraud alert as smishing."
+      },
+      {
+        trigger: "event",
+        eventType: "user_blocked_sender",
+        scoreAdjustment: 15,
+        reason: "User blocked unknown sender after reviewing suspicious text."
+      },
+      {
+        trigger: "observation_window_elapsed",
+        timeWindowSeconds: 60,
+        scoreAdjustment: 10,
+        reason: "User avoided clicking smishing link during observation window."
+      }
+    ],
+    negativeRules: [
+      {
+        trigger: "event",
+        eventType: "sms_link_clicked",
+        scoreAdjustment: -35,
+        reason: "User clicked malicious dispute link sent from unverified SMS sender."
+      }
+    ]
+  },
   userProfile: {
     name: "Pavan Kalyan",
     phoneNumber: "+1 (555) 234-5678",

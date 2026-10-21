@@ -178,14 +178,24 @@ describe('POST /api/scenarios/generate - AI Scenario Generation', () => {
 
   // 2. Channel Validation Tests
   describe('Channel Validation', () => {
-    it('rejects missing channel', async () => {
+    it('accepts omitted channel and predicts channel automatically', async () => {
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify(sampleValidScenarios.email)
+            }
+          }
+        ]
+      });
+
       const res = await request(app)
         .post('/api/scenarios/generate')
         .send({ prompt: 'Create a password reset spear phishing attack' });
 
-      expect(res.status).toBe(400);
-      expect(res.body.success).toBe(false);
-      expect(res.body.error).toMatch(/channel is required/i);
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.scenario.channel).toBe('email');
     });
 
     it('rejects invalid or unsupported channel', async () => {
@@ -364,7 +374,271 @@ describe('POST /api/scenarios/generate - AI Scenario Generation', () => {
     });
   });
 
-  // 7. Health Check
+  // 7. Website Scenario Generation & JSON Repair Regressions
+  describe('Website Scenario Generation & JSON Repair Regressions', () => {
+    const validWebsiteScenario = {
+      scenarioId: 'scen-web-reg-01',
+      channel: 'website',
+      title: 'University Portal Re-authentication',
+      description: 'Simulated credential harvesting portal',
+      category: 'Website Phishing',
+      difficulty: 'Medium',
+      initialPageId: 'page-login',
+      targetId: 'page-login',
+      browserConfig: {
+        siteTitle: 'Campus Single Sign-On',
+        defaultDomain: 'login-campus-verify.edu.portal-auth.com',
+        securityStatus: 'unsecured'
+      },
+      attackClassification: {
+        primaryType: 'credential_phishing',
+        secondaryTechniques: ['impersonation', 'urgency_manipulation'],
+        rationale: 'Spoofed university login interface harvesting authentication credentials.'
+      },
+      terminationRules: {
+        observationWindowSeconds: 120,
+        positiveConditions: [
+          {
+            id: 'rule_pos_threat_report',
+            trigger: 'explicit_user_action',
+            eventType: 'threat_reported',
+            points: 30,
+            label: 'Reported Phishing Attack',
+            explanation: 'User identified the fraudulent domain and reported the portal to security.'
+          }
+        ],
+        negativeConditions: [
+          {
+            id: 'rule_neg_credential_submit',
+            trigger: 'event',
+            eventType: 'simulated_form_submitted',
+            points: 35,
+            label: 'Submitted Credentials',
+            explanation: 'User entered credentials into an unverified third-party site.'
+          }
+        ]
+      },
+      pages: {
+        'page-login': {
+          id: 'page-login',
+          title: 'University Login',
+          url: 'https://login-campus-verify.edu.portal-auth.com/login',
+          layout: 'login-style',
+          isTargetPhish: true,
+          blocks: [
+            { type: 'heading', text: 'Campus Identity Provider' },
+            { type: 'paragraph', text: 'Enter your network credentials to continue.' },
+            { type: 'text-input', id: 'username-field', label: 'Student ID', placeholder: 's123456' },
+            { type: 'text-input', id: 'password-field', isMasked: true, label: 'Password', placeholder: '••••••••' },
+            { type: 'button', label: 'Log In', targetPageId: 'page-complete' }
+          ]
+        },
+        'page-complete': {
+          id: 'page-complete',
+          title: 'Verification Complete',
+          url: 'https://login-campus-verify.edu.portal-auth.com/complete',
+          layout: 'account-verification',
+          isTargetPhish: false,
+          blocks: [
+            { type: 'heading', text: 'Credentials Submitted' },
+            { type: 'paragraph', text: 'Your account is being synchronized.' }
+          ]
+        }
+      }
+    };
+
+    it('generates a valid multi-page website scenario with simulated login form', async () => {
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify(validWebsiteScenario)
+            }
+          }
+        ]
+      });
+
+      const res = await request(app)
+        .post('/api/scenarios/generate')
+        .send({ prompt: 'Simulate university portal credential harvesting', channel: 'website' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.scenario.channel).toBe('website');
+      expect(res.body.scenario.pages).toBeDefined();
+      expect(res.body.scenario.pages['page-login']).toBeDefined();
+      expect(res.body.scenario.pages['page-complete']).toBeDefined();
+      expect(res.body.scenario.attackClassification.primaryType).toBe('credential_phishing');
+      expect(res.body.scenario.terminationRules.positiveConditions).toHaveLength(1);
+      expect(res.body.scenario.terminationRules.negativeConditions).toHaveLength(1);
+    });
+
+    it('salvages provider json_validate_failed error when failed_generation contains rogue page syntax', async () => {
+      // Simulate Groq throwing json_validate_failed with defect pattern: `, { "page-apply": ... }}`
+      const rogueFailedGen = `{
+        "scenarioId": "scen-web-salvaged-01",
+        "channel": "website",
+        "title": "Recruitment Portal Verification",
+        "description": "Simulated job portal credential capture",
+        "category": "Credential Harvesting",
+        "difficulty": "Medium",
+        "initialPageId": "page-login",
+        "targetId": "page-login",
+        "browserConfig": {
+          "siteTitle": "Careers Apex",
+          "defaultDomain": "apex-careers.com",
+          "securityStatus": "unsecured"
+        },
+        "attackClassification": {
+          "primaryType": "credential_phishing",
+          "secondaryTechniques": ["impersonation"],
+          "rationale": "Impersonates corporate recruitment to capture candidate credentials."
+        },
+        "terminationRules": {
+          "observationWindowSeconds": 180,
+          "positiveConditions": [
+            {
+              "id": "rule_pos_salvage",
+              "trigger": "explicit_user_action",
+              "eventType": "threat_reported",
+              "points": 30,
+              "label": "Report Threat",
+              "explanation": "User detected fraudulent portal."
+            }
+          ],
+          "negativeConditions": [
+            {
+              "id": "rule_neg_salvage",
+              "trigger": "event",
+              "eventType": "simulated_form_submitted",
+              "points": 30,
+              "label": "Submit Application",
+              "explanation": "User entered sensitive credentials."
+            }
+          ]
+        },
+        "pages": {
+          "page-login": {
+            "id": "page-login",
+            "title": "Candidate Sign-in",
+            "url": "https://apex-careers.com/login",
+            "layout": "login-style",
+            "isTargetPhish": true,
+            "blocks": [
+              { "type": "heading", "text": "Welcome Candidate" },
+              { "type": "text-input", "id": "email-field", "label": "Email Address" },
+              { "type": "text-input", "id": "pwd-field", "isMasked": true, "label": "Password" },
+              { "type": "button", "label": "Continue", "targetPageId": "page-apply" }
+            ]
+          }, {
+          "page-apply": {
+            "id": "page-apply",
+            "title": "Application Form",
+            "url": "https://apex-careers.com/apply",
+            "layout": "account-verification",
+            "isTargetPhish": false,
+            "blocks": [
+              { "type": "heading", "text": "Application In Review" }
+            ]
+          }
+        }}`;
+
+      const groqError = new Error("Failed to generate JSON. Please adjust your prompt. See 'failed_generation' for more details.");
+      groqError.status = 400;
+      groqError.error = {
+        type: 'invalid_request_error',
+        code: 'json_validate_failed',
+        message: "Failed to generate JSON. Please adjust your prompt. See 'failed_generation' for more details.",
+        failed_generation: rogueFailedGen
+      };
+
+      mockCreate.mockRejectedValueOnce(groqError);
+
+      const res = await request(app)
+        .post('/api/scenarios/generate')
+        .send({ prompt: 'Recruitment portal phishing scenario', channel: 'website' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.scenario.scenarioId).toBe('scen-web-salvaged-01');
+      expect(res.body.scenario.channel).toBe('website');
+      expect(res.body.scenario.pages['page-login']).toBeDefined();
+      expect(res.body.scenario.pages['page-apply']).toBeDefined();
+    });
+
+    it('rejects website scenario with invalid page reference (button with nonexistent targetPageId)', async () => {
+      const invalidPageScenario = JSON.parse(JSON.stringify(validWebsiteScenario));
+      invalidPageScenario.pages['page-login'].blocks[4].targetPageId = 'page-nonexistent';
+
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify(invalidPageScenario)
+            }
+          }
+        ]
+      });
+
+      const res = await request(app)
+        .post('/api/scenarios/generate')
+        .send({ prompt: 'Simulate broken website links', channel: 'website' });
+
+      expect(res.status).toBe(422);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toMatch(/targetPageId "page-nonexistent"/i);
+    });
+
+    it('rejects website scenario with malformed form field (non-string id)', async () => {
+      const invalidFieldScenario = JSON.parse(JSON.stringify(validWebsiteScenario));
+      invalidFieldScenario.pages['page-login'].blocks[2].id = 12345; // invalid non-string id
+
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify(invalidFieldScenario)
+            }
+          }
+        ]
+      });
+
+      const res = await request(app)
+        .post('/api/scenarios/generate')
+        .send({ prompt: 'Simulate invalid form website', channel: 'website' });
+
+      expect(res.status).toBe(422);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toMatch(/has invalid "id"/i);
+    });
+
+    it('returns a clean error message without leaking raw JSON when unrecoverable JSON failure occurs', async () => {
+      const completelyBrokenError = new Error('400 Failed to generate JSON. {"failed_generation": "definitely not salvageable [}{"}');
+      completelyBrokenError.status = 400;
+      completelyBrokenError.error = {
+        type: 'invalid_request_error',
+        code: 'json_validate_failed',
+        failed_generation: 'definitely not salvageable [}{'
+      };
+
+      // Mock both initial call and retry to fail
+      mockCreate.mockRejectedValueOnce(completelyBrokenError);
+      mockCreate.mockRejectedValueOnce(completelyBrokenError);
+
+      const res = await request(app)
+        .post('/api/scenarios/generate')
+        .send({ prompt: 'Trigger unrecoverable error', channel: 'website' });
+
+      expect(res.status).toBe(422);
+      expect(res.body.success).toBe(false);
+      // Clean error without raw failed_generation or API key leak
+      expect(res.body.error).toBe('Website scenario generation failed validation. Please retry.');
+      expect(res.body.error).not.toMatch(/failed_generation/i);
+      expect(res.body.error).not.toMatch(/definitely not salvageable/i);
+    });
+  });
+
+  // 8. Health Check
   describe('Health check', () => {
     it('returns 200 on /api/health', async () => {
       const res = await request(app).get('/api/health');

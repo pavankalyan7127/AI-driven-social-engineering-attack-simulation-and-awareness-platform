@@ -274,4 +274,134 @@ describe('EmailSimulation Component', () => {
     render(<EmailSimulation scenario={null} />);
     expect(screen.getByText('Scenario Unavailable')).toBeInTheDocument();
   });
+
+  it('opens 3-dot more options dropdown and allows blocking sender as a positive termination', () => {
+    const handleAction = vi.fn();
+    const handleComplete = vi.fn();
+
+    render(
+      <EmailSimulation
+        scenario={sampleScenario}
+        sessionId="test-session-123"
+        onAction={handleAction}
+        onComplete={handleComplete}
+      />
+    );
+
+    // Open target email
+    fireEvent.click(screen.getByText('VIT Events - Password reset'));
+
+    // Click 3-dot More options button
+    const moreBtn = screen.getByLabelText('More options');
+    fireEvent.click(moreBtn);
+
+    // Menu should appear with Block, Report spam, Report phishing
+    expect(screen.getByTestId('message-more-menu')).toBeInTheDocument();
+    expect(screen.getByText(/Block /i)).toBeInTheDocument();
+    expect(screen.getByText('Report spam')).toBeInTheDocument();
+    expect(screen.getByText('Report phishing')).toBeInTheDocument();
+
+    // Click Block sender
+    fireEvent.click(screen.getByText(/Block /i));
+
+    // Verify user_blocked_sender event emitted
+    expect(handleAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'user_blocked_sender',
+        sessionId: 'test-session-123',
+      })
+    );
+
+    // Verify positive termination callback called
+    expect(handleComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'safe_exit',
+        action: 'user_blocked_sender',
+      })
+    );
+  });
+
+  it('allows reporting spam from 3-dot menu as a positive termination', () => {
+    const handleAction = vi.fn();
+    const handleComplete = vi.fn();
+
+    render(
+      <EmailSimulation
+        scenario={sampleScenario}
+        sessionId="test-session-123"
+        onAction={handleAction}
+        onComplete={handleComplete}
+      />
+    );
+
+    // Open target email
+    fireEvent.click(screen.getByText('VIT Events - Password reset'));
+
+    // Click 3-dot More options button
+    fireEvent.click(screen.getByLabelText('More options'));
+
+    // Click Report spam
+    fireEvent.click(screen.getByText('Report spam'));
+
+    // Verify threat_reported event emitted
+    expect(handleAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'threat_reported',
+        metadata: expect.objectContaining({
+          reportType: 'spam',
+        }),
+      })
+    );
+
+    // Verify reported termination callback
+    expect(handleComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'reported',
+        action: 'threat_reported',
+      })
+    );
+  });
+
+  it('allows blocking sender and reporting phishing from the top toolbar 3-dot menu', () => {
+    const handleAction = vi.fn();
+    const handleComplete = vi.fn();
+
+    render(
+      <EmailSimulation
+        scenario={sampleScenario}
+        sessionId="test-session-123"
+        onAction={handleAction}
+        onComplete={handleComplete}
+      />
+    );
+
+    // Open target email
+    fireEvent.click(screen.getByText('VIT Events - Password reset'));
+
+    // Click top toolbar 3-dot More options button
+    const toolbarMoreBtn = screen.getByTestId('toolbar-more-button');
+    fireEvent.click(toolbarMoreBtn);
+
+    // Verify top toolbar menu opened
+    expect(screen.getByTestId('toolbar-more-menu')).toBeInTheDocument();
+
+    // Click block sender option
+    const blockButton = screen.getByRole('button', { name: /Block/i });
+    fireEvent.click(blockButton);
+
+    // Verify user_blocked_sender event emitted
+    expect(handleAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'user_blocked_sender',
+      })
+    );
+
+    // Verify safe_exit termination callback
+    expect(handleComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'safe_exit',
+        action: 'user_blocked_sender',
+      })
+    );
+  });
 });

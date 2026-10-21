@@ -80,21 +80,25 @@ router.post('/generate', (req, res, next) => {
       });
     }
 
-    // 2. Validate channel
-    if (!channel || typeof channel !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Channel is required. Allowed channels: email, chat, sms, website.'
-      });
-    }
-
-    const normalizedChannel = channel.toLowerCase().trim();
+    // 2. Validate channel (Optional: if omitted, AI automatically predicts channel)
     const ALLOWED_CHANNELS = ['email', 'chat', 'sms', 'website'];
-    if (!ALLOWED_CHANNELS.includes(normalizedChannel)) {
-      return res.status(400).json({
-        success: false,
-        error: `Unsupported channel "${channel}". Supported channels: ${ALLOWED_CHANNELS.join(', ')}.`
-      });
+    let normalizedChannel = null;
+
+    if (channel !== undefined && channel !== null && String(channel).trim().length > 0) {
+      if (typeof channel !== 'string') {
+        return res.status(400).json({
+          success: false,
+          error: `Channel must be a string if provided. Allowed: ${ALLOWED_CHANNELS.join(', ')}.`
+        });
+      }
+
+      normalizedChannel = channel.toLowerCase().trim();
+      if (!ALLOWED_CHANNELS.includes(normalizedChannel)) {
+        return res.status(400).json({
+          success: false,
+          error: `Unsupported channel "${channel}". Supported channels: ${ALLOWED_CHANNELS.join(', ')}.`
+        });
+      }
     }
 
     // 3. Generate Scenario via Groq Service
@@ -116,9 +120,15 @@ router.post('/generate', (req, res, next) => {
   } catch (err) {
     console.error('[Scenario Route Error]:', err.message);
     const statusCode = err.statusCode || 500;
+    let clientErrorMessage = err.message || 'An error occurred during scenario generation.';
+    if (clientErrorMessage.includes('failed_generation') || clientErrorMessage.includes('json_validate_failed')) {
+      const channelLabel = normalizedChannel ? normalizedChannel.charAt(0).toUpperCase() + normalizedChannel.slice(1) : 'Website';
+      clientErrorMessage = `${channelLabel} scenario generation failed validation. Please retry.`;
+    }
+
     return res.status(statusCode).json({
       success: false,
-      error: err.message || 'An error occurred during scenario generation.',
+      error: clientErrorMessage,
       validationErrors: err.validationErrors || undefined
     });
   }

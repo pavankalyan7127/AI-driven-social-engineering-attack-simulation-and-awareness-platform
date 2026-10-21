@@ -15,7 +15,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
-  FileText
+  FileText,
+  StopCircle
 } from 'lucide-react';
 import AwarenessReportView from './components/report/AwarenessReportView';
 import { sendTelemetryEvent } from './services/telemetryService';
@@ -78,6 +79,14 @@ export default function App() {
   const [reportIsStale, setReportIsStale] = useState(false);
   const reportRequestedRef = useRef(false);
 
+  // Outcome Engine & Manual Termination state (Step 2)
+  const [outcomeNotice, setOutcomeNotice] = useState(null); // { type: 'positive'|'negative'|'incomplete', message }
+  const [showEndConfirmModal, setShowEndConfirmModal] = useState(false);
+  const [isEndingSimulation, setIsEndingSimulation] = useState(false);
+  const [isRedoingSimulation, setIsRedoingSimulation] = useState(false);
+  const observationStartedRef = useRef(false);
+  const outcomeNavTimerRef = useRef(null);
+
   const sampleScenariosByChannel = {
     email: sampleScenario,
     chat: sampleChatScenario,
@@ -111,12 +120,27 @@ export default function App() {
   const handleAction = (event) => {
     console.log('[Simulation Event Dispatched]:', event);
     setEvents((prev) => [event, ...prev]);
+
+    // Start observation window countdown on backend upon first interaction/open event
+    if (
+      currentSessionId &&
+      !observationStartedRef.current &&
+      ['message_opened', 'conversation_opened', 'virtual_page_viewed', 'scenario_viewed'].includes(event?.eventType)
+    ) {
+      observationStartedRef.current = true;
+      fetch(`/api/sessions/${currentSessionId}/observation-window`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }).catch((err) => {
+        console.warn('[Observation Window Start Warning]:', err);
+      });
+    }
   };
 
   /**
    * Terminal completion handler:
-   * Maps outcome to lifecycle status and updates backend session atomically via PATCH /api/sessions/:id/status.
-   * Prevents duplicate or conflicting updates.
+   * Maps outcome to lifecycle status and updates backend session atomically via POST /api/sessions/:id/outcome or PATCH /status.
+   * Enforces single-outcome-wins, displays outcome notification, and auto-navigates to report.
    */
   const handleComplete = async (result) => {
     console.log('[Simulation Finalized]:', result);
@@ -142,6 +166,7 @@ export default function App() {
     }
 
     try {
+      // 1. Update session status
       const response = await fetch(`/api/sessions/${currentSessionId}/status`, {
         method: 'PATCH',
         headers: {
@@ -156,7 +181,6 @@ export default function App() {
         const errorMsg = data.error || `Status update failed with HTTP ${response.status}`;
         console.error('[Session Status Sync Error]:', errorMsg);
         setSessionSyncError(errorMsg);
-        // Do not pretend backend update succeeded if it failed
         return;
       }
 
@@ -168,35 +192,219 @@ export default function App() {
       });
       setSessionSyncError(null);
 
-      // Trigger deterministic security scoring calculation after successful status synchronization
+      // 2. Trigger outcome evaluation and deterministic score calculation
+      let resolvedOutcome = 'incomplete';
       if (currentSessionId && !scoreRequestedRef.current) {
         scoreRequestedRef.current = true;
         try {
           const scoreRes = await fetch(`/api/sessions/${currentSessionId}/score`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            }
+            headers: { 'Content-Type': 'application/json' }
           });
           const scoreData = await scoreRes.json();
           const scoreObj = scoreData.scoreRecord || scoreData.score;
           if (scoreRes.ok && scoreData.success && scoreObj) {
             setBehaviorScore(scoreObj);
-            // Background prefetch for awareness report
-            if (!reportRequestedRef.current) {
-              reportRequestedRef.current = true;
-              fetchOrGenerateReport(currentSessionId, false).catch(() => {});
-            }
-          } else {
-            console.warn('[Session Scoring Warning]:', scoreData.error || 'Failed to calculate behavior score');
+            resolvedOutcome = scoreObj.outcome || (targetStatus === 'reported' || targetStatus === 'safe_exit' ? 'positive' : 'negative');
           }
         } catch (scoreErr) {
           console.error('[Session Scoring Error]:', scoreErr);
         }
       }
+
+      // 3. Show brief outcome notification
+      if (resolvedOutcome === 'positive' || targetStatus === 'reported' || targetStatus === 'safe_exit') {
+        setOutcomeNotice({
+          type: 'positive',
+          message: 'Protective action recognized. Excellent security vigilance!'
+        });
+      } else if (resolvedOutcome === 'negative') {
+        setOutcomeNotice({
+          type: 'negative',
+          message: "Risky action detected. Let's review what happened."
+        });
+      } else {
+        setOutcomeNotice({
+          type: 'incomplete',
+          message: 'Simulation ended before a definitive attack outcome was established.'
+        });
+      }
+
+      // 4. Prefetch awareness report and auto-open report view
+      if (!reportRequestedRef.current) {
+        reportRequestedRef.current = true;
+        fetchOrGenerateReport(currentSessionId, false).catch(() => {});
+      }
+
+      // Auto-transition to report view after brief notification preview (~1200ms)
+      if (outcomeNavTimerRef.current) {
+        clearTimeout(outcomeNavTimerRef.current);
+      }
+      outcomeNavTimerRef.current = setTimeout(() => {
+        setActiveView('report');
+      }, 1200);
+
     } catch (err) {
       console.error('[Session Network Error]:', err);
       setSessionSyncError(`Network failure: could not record session status on backend (${err.message}).`);
+    }
+  };
+
+  /**
+   * Manual End Simulation Handler:
+   * Prompts confirmation, evaluates outcome on backend, assigns 'incomplete' if no terminal condition met,
+   * calculates final score, and transitions to report.
+   */
+  const handleManualEndSimulation = async () => {
+    if (isEndingSimulation || sessionStatus !== 'active' || terminalStatusRef.current) return;
+    setIsEndingSimulation(true);
+    setShowEndConfirmModal(false);
+
+    try {
+      terminalStatusRef.current = 'completed';
+
+      // Record telemetry event for manual end
+      sendTelemetryEvent({
+        sessionId: currentSessionId,
+        eventType: 'simulation_completed',
+        metadata: { trigger: 'manual_end_simulation' }
+      }).catch(() => {});
+
+      const outcomeRes = await fetch(`/api/sessions/${currentSessionId}/outcome`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          manualEnd: true,
+          rulesOverride: currentScenario?.terminationRules || null
+        })
+      });
+
+      const data = await outcomeRes.json();
+      if (!outcomeRes.ok || !data.success) {
+        const errorMsg = data.error || 'Failed to finalize manual simulation end.';
+        console.error('[Manual End Outcome Error]:', errorMsg);
+        setSessionSyncError(errorMsg);
+        setIsEndingSimulation(false);
+        return;
+      }
+
+      setSessionStatus(data.session?.status || 'completed');
+      if (data.scoreRecord) {
+        setBehaviorScore(data.scoreRecord);
+      }
+
+      const outcomeType = data.outcome?.outcome || 'incomplete';
+      if (outcomeType === 'positive') {
+        setOutcomeNotice({
+          type: 'positive',
+          message: 'Protective action recognized.'
+        });
+      } else if (outcomeType === 'negative') {
+        setOutcomeNotice({
+          type: 'negative',
+          message: "Risky action detected. Let's review what happened."
+        });
+      } else {
+        setOutcomeNotice({
+          type: 'incomplete',
+          message: 'Simulation ended before a definitive attack outcome was established.'
+        });
+      }
+
+      // Prefetch report & transition
+      if (!reportRequestedRef.current) {
+        reportRequestedRef.current = true;
+        fetchOrGenerateReport(currentSessionId, false).catch(() => {});
+      }
+
+      if (outcomeNavTimerRef.current) {
+        clearTimeout(outcomeNavTimerRef.current);
+      }
+      outcomeNavTimerRef.current = setTimeout(() => {
+        setActiveView('report');
+      }, 1200);
+
+    } catch (err) {
+      console.error('[Manual End Error]:', err);
+      setSessionSyncError(`Failed to end simulation: ${err.message}`);
+    } finally {
+      setIsEndingSimulation(false);
+    }
+  };
+
+  /**
+   * Redo Simulation Handler:
+   * Starts a brand new simulation session with a fresh sessionId in MongoDB,
+   * cleanly resetting all telemetry, scoring, outcomes, and report states,
+   * while preserving the existing scenario, rules, and attack classification.
+   */
+  const handleRedoSimulation = async () => {
+    if (isRedoingSimulation) return;
+    if (!currentScenario) {
+      handleReturnToGenerator();
+      return;
+    }
+
+    setIsRedoingSimulation(true);
+
+    if (outcomeNavTimerRef.current) {
+      clearTimeout(outcomeNavTimerRef.current);
+      outcomeNavTimerRef.current = null;
+    }
+
+    try {
+      const scenarioChannel = currentScenario?.channel || savedChannel || 'email';
+      const scenarioId = currentScenario?.scenarioId || currentScenario?.id || `scen-${scenarioChannel}-${Date.now()}`;
+
+      const sessionResponse = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          scenarioId,
+          channel: scenarioChannel,
+          terminationRules: currentScenario?.terminationRules || null,
+          attackClassification: currentScenario?.attackClassification || null
+        })
+      });
+
+      const sessionData = await sessionResponse.json();
+
+      if (!sessionResponse.ok || !sessionData.success) {
+        const errText = sessionData.error || `Session creation failed with status ${sessionResponse.status}`;
+        console.error('[Redo Simulation Error]:', errText);
+        setSessionSyncError(errText);
+        setIsRedoingSimulation(false);
+        return;
+      }
+
+      const newSessionId = sessionData.sessionId;
+
+      // Cleanly reset lifecycle, scoring, telemetry and report states
+      setCurrentSessionId(newSessionId);
+      setSessionStatus('active');
+      terminalStatusRef.current = null;
+      scoreRequestedRef.current = false;
+      reportRequestedRef.current = false;
+      observationStartedRef.current = false;
+      setBehaviorScore(null);
+      setAwarenessReport(null);
+      setReportLoading(false);
+      setReportError(null);
+      setReportIsStale(false);
+      setSessionSyncError(null);
+      setOutcomeNotice(null);
+      setSimulationCompletedData(null);
+      setEvents([]);
+
+      // Transition immediately to simulation view
+      setActiveView('simulation');
+    } catch (err) {
+      console.error('[Redo Simulation Network Error]:', err);
+      setSessionSyncError(`Failed to restart simulation: ${err.message}`);
+    } finally {
+      setIsRedoingSimulation(false);
     }
   };
 
@@ -251,6 +459,11 @@ export default function App() {
   };
 
   const handleReturnToGenerator = async () => {
+    if (outcomeNavTimerRef.current) {
+      clearTimeout(outcomeNavTimerRef.current);
+      outcomeNavTimerRef.current = null;
+    }
+
     // If returning while session is still active, mark as abandoned
     if (currentSessionId && sessionStatus === 'active' && !terminalStatusRef.current) {
       try {
@@ -307,14 +520,17 @@ export default function App() {
         session={{
           sessionId: currentSessionId,
           status: sessionStatus,
-          channel: currentScenario?.channel || savedChannel
+          channel: currentScenario?.channel || savedChannel,
+          attackClassification: currentScenario?.attackClassification || null
         }}
+        attackClassification={awarenessReport?.attackClassification || currentScenario?.attackClassification || null}
         loading={reportLoading}
         error={reportError}
         isStale={reportIsStale}
         onRetry={() => fetchOrGenerateReport(currentSessionId, true)}
         onReturnToGenerator={handleReturnToGenerator}
-        onBackToSimulation={() => setActiveView('simulation')}
+        onRedoSimulation={handleRedoSimulation}
+        isRedoing={isRedoingSimulation}
       />
     );
   }
@@ -390,6 +606,23 @@ export default function App() {
             </div>
           )}
 
+          {/* Manual End Simulation Button (Step 2) */}
+          {sessionStatus === 'active' && (
+            <button
+              onClick={() => setShowEndConfirmModal(true)}
+              data-testid="end-simulation-btn"
+              disabled={isEndingSimulation || terminalStatusRef.current !== null}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold border transition-all ${
+                isEndingSimulation
+                  ? 'bg-gray-800 text-gray-500 border-gray-700 cursor-not-allowed'
+                  : 'bg-red-950/60 hover:bg-red-900/80 text-red-200 border-red-700/60 hover:border-red-600 shadow-sm cursor-pointer'
+              }`}
+            >
+              <StopCircle className="w-3.5 h-3.5 text-red-400" />
+              <span>{isEndingSimulation ? 'Ending...' : 'End Simulation'}</span>
+            </button>
+          )}
+
           {/* View Awareness Report Button (Step 4) */}
           {sessionStatus !== 'active' && (
             <button
@@ -414,23 +647,25 @@ export default function App() {
             </div>
           )}
 
-          {/* Responsive Viewport Toggle */}
-          <div className="flex items-center bg-gray-800 rounded-lg p-0.5 border border-gray-700">
-            <button
-              onClick={() => setDeviceWidthMode('full')}
-              className={`p-1 rounded ${deviceWidthMode === 'full' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
-              title="Desktop width"
-            >
-              <Monitor className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setDeviceWidthMode('mobile')}
-              className={`p-1 rounded ${deviceWidthMode === 'mobile' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
-              title="Mobile viewport simulation (420px)"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          {/* Responsive Viewport Toggle (Hidden for SMS - Mobile Only) */}
+          {currentScenario?.channel !== 'sms' && (
+            <div data-testid="viewport-toggle-container" className="flex items-center bg-gray-800 rounded-lg p-0.5 border border-gray-700">
+              <button
+                onClick={() => setDeviceWidthMode('full')}
+                className={`p-1 rounded ${deviceWidthMode === 'full' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                title="Desktop width"
+              >
+                <Monitor className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setDeviceWidthMode('mobile')}
+                className={`p-1 rounded ${deviceWidthMode === 'mobile' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                title="Mobile viewport simulation (420px)"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Event Log Toggle Button */}
           <button
@@ -448,8 +683,8 @@ export default function App() {
       <div className="flex-1 overflow-hidden relative flex items-center justify-center bg-gray-900">
         <div
           className={`h-full transition-all duration-300 ${
-            deviceWidthMode === 'mobile'
-              ? 'w-[420px] shadow-2xl border-x border-gray-800 my-auto rounded-xl overflow-hidden'
+            currentScenario?.channel === 'sms' || deviceWidthMode === 'mobile'
+              ? 'w-full max-w-[420px] shadow-2xl border-x border-gray-800 my-auto rounded-xl overflow-hidden'
               : 'w-full'
           }`}
         >
@@ -517,6 +752,73 @@ export default function App() {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Outcome Notification Banner (Step 2) */}
+        {outcomeNotice && (
+          <div
+            data-testid="outcome-notification"
+            className={`absolute top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-2xl border flex items-center gap-3 backdrop-blur-md transition-all animate-in fade-in slide-in-from-top-4 duration-300 ${
+              outcomeNotice.type === 'positive'
+                ? 'bg-emerald-950/90 border-emerald-500/80 text-emerald-100 shadow-emerald-900/40'
+                : outcomeNotice.type === 'negative'
+                ? 'bg-red-950/90 border-red-500/80 text-red-100 shadow-red-900/40'
+                : 'bg-amber-950/90 border-amber-500/80 text-amber-100 shadow-amber-900/40'
+            }`}
+          >
+            {outcomeNotice.type === 'positive' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            ) : outcomeNotice.type === 'negative' ? (
+              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+            ) : (
+              <Clock className="w-5 h-5 text-amber-400 shrink-0" />
+            )}
+            <span className="text-xs font-semibold">{outcomeNotice.message}</span>
+          </div>
+        )}
+
+        {/* Confirmation Modal for Manual End Simulation (Step 2) */}
+        {showEndConfirmModal && (
+          <div
+            data-testid="end-confirm-modal"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in"
+          >
+            <div className="w-full max-w-md bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-950/80 border border-red-700/60 flex items-center justify-center text-red-400">
+                  <StopCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">End Simulation Early?</h3>
+                  <p className="text-xs text-gray-400">Confirmation required</p>
+                </div>
+              </div>
+
+              <div className="text-xs text-gray-300 leading-relaxed bg-gray-950/60 p-3 rounded-lg border border-gray-800/80">
+                Are you sure you want to end this simulation? Ending early before satisfying a protective or risky condition will result in an <strong>incomplete</strong> outcome.
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  data-testid="cancel-end-btn"
+                  onClick={() => setShowEndConfirmModal(false)}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 transition-colors"
+                >
+                  Cancel & Continue
+                </button>
+                <button
+                  type="button"
+                  data-testid="confirm-end-btn"
+                  onClick={handleManualEndSimulation}
+                  disabled={isEndingSimulation}
+                  className="px-4 py-1.5 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-500 transition-colors shadow-md shadow-red-600/30"
+                >
+                  {isEndingSimulation ? 'Finalizing...' : 'Confirm End'}
+                </button>
+              </div>
             </div>
           </div>
         )}

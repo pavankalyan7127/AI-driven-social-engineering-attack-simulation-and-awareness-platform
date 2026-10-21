@@ -14,6 +14,35 @@ export const sampleWebsiteScenario = {
   category: "Website Phishing / Credential Harvesting",
   difficulty: "Medium",
   initialPageId: "page-portal-login",
+  attackClassification: {
+    primaryType: "credential_phishing",
+    secondaryTechniques: ["watering_hole", "urgency_manipulation"],
+    rationale: "Spoofed institutional portal hosted on lookalike domain prompting user to enter credentials and simulated MFA."
+  },
+  terminationRules: {
+    positiveRules: [
+      {
+        trigger: "event",
+        eventType: "user_reported_page",
+        scoreAdjustment: 25,
+        reason: "User flagged spoofed login portal as fraudulent credential harvester."
+      },
+      {
+        trigger: "observation_window_elapsed",
+        timeWindowSeconds: 120,
+        scoreAdjustment: 15,
+        reason: "User inspected simulated website without entering credentials into fraudulent form."
+      }
+    ],
+    negativeRules: [
+      {
+        trigger: "event",
+        eventType: "simulated_form_submitted",
+        scoreAdjustment: -35,
+        reason: "User submitted credentials into fake university single sign-on form."
+      }
+    ]
+  },
   browserConfig: {
     siteTitle: "V-TOP Student Portal - Single Sign On",
     defaultDomain: "vtop-auth-portal.secure-verify-student.info",

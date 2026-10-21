@@ -116,6 +116,10 @@ const awarenessReportSchema = new mongoose.Schema(
       },
       default: 'completed'
     },
+    attackClassification: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
     providerModel: {
       type: String,
       trim: true,

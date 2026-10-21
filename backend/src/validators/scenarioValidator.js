@@ -5,24 +5,33 @@
  * Rejects malformed JSON, unsupported block types, unsafe tags, and missing fields.
  */
 
-const ALLOWED_CHANNELS = ['email', 'chat', 'sms', 'website'];
+import { validateAttackClassification } from '../config/attackTaxonomy.js';
+import {
+  validateTerminationRules,
+  generateDefaultTerminationRules
+} from './terminationRulesValidator.js';
 
-const ALLOWED_WEBSITE_LAYOUTS = [
+export const ALLOWED_CHANNELS = ['email', 'chat', 'sms', 'website'];
+
+export const ALLOWED_WEBSITE_LAYOUTS = [
   'login-style',
   'account-verification',
   'generic',
   'security-warning',
   'confirmation',
-  'delivery-tracking'
+  'delivery-tracking',
+  'form-style'
 ];
 
-const ALLOWED_WEBSITE_BLOCKS = [
+export const ALLOWED_WEBSITE_BLOCKS = [
   'heading',
   'paragraph',
   'notice',
   'alert',
   'text-input',
   'email-input',
+  'file-input',
+  'password-input',
   'checkbox',
   'button',
   'simulated-link',
@@ -78,7 +87,31 @@ export function validateScenario(scenario, expectedChannel) {
     scenario.difficulty = 'Medium';
   }
 
-  // 3. Channel-specific validation
+  // 3. Attack Classification Validation
+  if (scenario.attackClassification !== undefined) {
+    const attackResult = validateAttackClassification(scenario.attackClassification);
+    if (!attackResult.valid) {
+      errors.push(...attackResult.errors);
+    } else {
+      scenario.attackClassification = attackResult.classification;
+    }
+  } else {
+    const defaultPrimary =
+      channel === 'sms'
+        ? 'smishing'
+        : channel === 'chat'
+        ? 'pretexting'
+        : channel === 'website'
+        ? 'credential_phishing'
+        : 'spear_phishing';
+    scenario.attackClassification = {
+      primaryType: defaultPrimary,
+      secondaryTechniques: ['impersonation'],
+      rationale: `Classified as ${defaultPrimary} delivery vector.`
+    };
+  }
+
+  // 4. Channel-specific structural validation
   if (channel === 'email') {
     validateEmailScenario(scenario, errors);
   } else if (channel === 'chat') {
@@ -87,6 +120,18 @@ export function validateScenario(scenario, expectedChannel) {
     validateSmsScenario(scenario, errors);
   } else if (channel === 'website') {
     validateWebsiteScenario(scenario, errors);
+  }
+
+  // 5. Termination Rules Validation (runs after channel-specific validation so scenario blocks are checked)
+  if (scenario.terminationRules !== undefined) {
+    const termResult = validateTerminationRules(scenario.terminationRules, channel, scenario);
+    if (!termResult.valid) {
+      errors.push(...termResult.errors);
+    } else {
+      scenario.terminationRules = termResult.rules;
+    }
+  } else {
+    scenario.terminationRules = generateDefaultTerminationRules(channel);
   }
 
   if (errors.length > 0) {
@@ -241,17 +286,75 @@ function validateSmsScenario(scenario, errors) {
 }
 
 function validateWebsiteScenario(scenario, errors) {
-  if (!scenario.pages || typeof scenario.pages !== 'object' || Object.keys(scenario.pages).length === 0) {
+  if (!scenario.pages || typeof scenario.pages !== 'object') {
     errors.push('Website scenario must contain a non-empty "pages" dictionary');
     return;
   }
 
+  // Normalize pages if provided as an array
+  if (Array.isArray(scenario.pages)) {
+    const pagesMap = {};
+    for (const [idx, page] of scenario.pages.entries()) {
+      if (page && typeof page === 'object') {
+        const pid = page.id || `page-${idx + 1}`;
+        page.id = pid;
+        pagesMap[pid] = page;
+      }
+    }
+    scenario.pages = pagesMap;
+  }
+
+  // Harvest rogue root-level pages that were closed prematurely by LLM
+  for (const key of Object.keys(scenario)) {
+    if (
+      key !== 'pages' &&
+      (key.startsWith('page-') ||
+        (scenario[key] &&
+          typeof scenario[key] === 'object' &&
+          Array.isArray(scenario[key].blocks) &&
+          scenario[key].title))
+    ) {
+      scenario.pages[key] = scenario[key];
+      delete scenario[key];
+    }
+  }
+
   const pageIds = Object.keys(scenario.pages);
-  if (!scenario.initialPageId || !scenario.pages[scenario.initialPageId]) {
+  if (pageIds.length === 0) {
+    errors.push('Website scenario must contain a non-empty "pages" dictionary');
+    return;
+  }
+
+  // Validate initialPageId if specified
+  if (scenario.initialPageId) {
+    if (!pageIds.includes(scenario.initialPageId)) {
+      errors.push(`Invalid initialPageId "${scenario.initialPageId}". It does not match any page in "pages"`);
+    }
+  } else {
     scenario.initialPageId = pageIds[0];
   }
+
   if (!scenario.targetId) {
     scenario.targetId = scenario.initialPageId;
+  }
+
+  // Normalize browserConfig
+  if (!scenario.browserConfig || typeof scenario.browserConfig !== 'object') {
+    scenario.browserConfig = {
+      siteTitle: scenario.title || 'Virtual Browser',
+      defaultDomain: 'portal-verify.secure-domain.info',
+      securityStatus: 'unsecured'
+    };
+  } else {
+    if (!scenario.browserConfig.siteTitle) {
+      scenario.browserConfig.siteTitle = scenario.title || 'Virtual Browser';
+    }
+    if (!scenario.browserConfig.defaultDomain) {
+      scenario.browserConfig.defaultDomain = 'portal-verify.secure-domain.info';
+    }
+    if (!['secure', 'unsecured', 'warning'].includes(scenario.browserConfig.securityStatus)) {
+      scenario.browserConfig.securityStatus = 'unsecured';
+    }
   }
 
   for (const pageId of pageIds) {
@@ -265,8 +368,12 @@ function validateWebsiteScenario(scenario, errors) {
     if (!page.title) page.title = 'Virtual Web Page';
     if (!page.url) page.url = `https://portal-verify.secure-domain.info/${pageId}`;
 
-    if (page.layout && !ALLOWED_WEBSITE_LAYOUTS.includes(page.layout)) {
-      errors.push(`Page "${pageId}" has unsupported layout "${page.layout}". Allowed: ${ALLOWED_WEBSITE_LAYOUTS.join(', ')}`);
+    if (page.layout) {
+      if (page.layout === 'form-style') {
+        page.layout = 'account-verification';
+      } else if (!ALLOWED_WEBSITE_LAYOUTS.includes(page.layout)) {
+        page.layout = 'generic';
+      }
     }
 
     if (!Array.isArray(page.blocks) || page.blocks.length === 0) {
@@ -277,8 +384,31 @@ function validateWebsiteScenario(scenario, errors) {
           errors.push(`Page "${pageId}".blocks[${bIdx}] must contain a valid block object with "type"`);
           continue;
         }
+
+        // Normalize password-input to text-input with isMasked: true
+        if (block.type === 'password-input') {
+          block.type = 'text-input';
+          block.isMasked = true;
+        }
+
         if (!ALLOWED_WEBSITE_BLOCKS.includes(block.type)) {
           errors.push(`Unsupported website block type "${block.type}" in page "${pageId}" at block ${bIdx}`);
+        }
+
+        // Validate form input fields have valid string IDs
+        if (['text-input', 'email-input', 'file-input', 'checkbox'].includes(block.type)) {
+          if (block.id !== undefined && (typeof block.id !== 'string' || !block.id.trim())) {
+            errors.push(`Page "${pageId}".blocks[${bIdx}] of type "${block.type}" has invalid "id"`);
+          } else if (!block.id) {
+            block.id = `input-${pageId}-${bIdx + 1}`;
+          }
+        }
+
+        // Validate button targetPageId references an existing page
+        if (block.type === 'button' && block.targetPageId) {
+          if (typeof block.targetPageId !== 'string' || !pageIds.includes(block.targetPageId)) {
+            errors.push(`Page "${pageId}".blocks[${bIdx}] button references nonexistent targetPageId "${block.targetPageId}"`);
+          }
         }
       }
     }

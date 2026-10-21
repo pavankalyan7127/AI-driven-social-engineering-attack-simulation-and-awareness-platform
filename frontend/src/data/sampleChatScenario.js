@@ -14,6 +14,41 @@ export const sampleChatScenario = {
   category: "Chat Impersonation / Credential Phishing",
   difficulty: "Medium",
   initialView: "list", // 'list' or 'chat'
+  attackClassification: {
+    primaryType: "impersonation",
+    secondaryTechniques: ["urgency_manipulation", "credential_phishing"],
+    rationale: "Attacker impersonates enterprise IT support via direct chat, citing abnormal logins and imposing urgent credential verification."
+  },
+  terminationRules: {
+    positiveRules: [
+      {
+        trigger: "event",
+        eventType: "user_reported_chat",
+        scoreAdjustment: 25,
+        reason: "User identified IT support impersonation in chat and reported contact."
+      },
+      {
+        trigger: "observation_window_elapsed",
+        timeWindowSeconds: 90,
+        scoreAdjustment: 15,
+        reason: "User observed chat without disclosing credentials or downloading payload."
+      }
+    ],
+    negativeRules: [
+      {
+        trigger: "event",
+        eventType: "chat_link_clicked",
+        scoreAdjustment: -25,
+        reason: "User clicked suspicious emergency verification link in external chat."
+      },
+      {
+        trigger: "event",
+        eventType: "chat_attachment_downloaded",
+        scoreAdjustment: -30,
+        reason: "User downloaded untrusted security report attachment in external chat."
+      }
+    ]
+  },
   userProfile: {
     name: "Pavan Kalyan",
     handle: "@pavankalyan",

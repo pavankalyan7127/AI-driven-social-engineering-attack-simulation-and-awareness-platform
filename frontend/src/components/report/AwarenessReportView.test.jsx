@@ -44,15 +44,15 @@ describe('AwarenessReportView Component', () => {
     expect(screen.getByText(/Generating Awareness & Remediation Report/i)).toBeInTheDocument();
   });
 
-  it('renders error state and handles retry button click', () => {
+  it('renders error state and handles retry and redo button clicks', () => {
     const handleRetry = vi.fn();
-    const handleBack = vi.fn();
+    const handleRedo = vi.fn();
 
     render(
       <AwarenessReportView
         error="AI provider rate limit reached"
         onRetry={handleRetry}
-        onBackToSimulation={handleBack}
+        onRedoSimulation={handleRedo}
       />
     );
 
@@ -64,9 +64,12 @@ describe('AwarenessReportView Component', () => {
     fireEvent.click(retryBtn);
     expect(handleRetry).toHaveBeenCalledTimes(1);
 
-    const backBtn = screen.getByTestId('back-to-simulation-btn');
-    fireEvent.click(backBtn);
-    expect(handleBack).toHaveBeenCalledTimes(1);
+    const redoBtn = screen.getByTestId('redo-simulation-btn');
+    fireEvent.click(redoBtn);
+    expect(handleRedo).toHaveBeenCalledTimes(1);
+
+    // Old View Simulation button must NOT be present
+    expect(screen.queryByTestId('back-to-simulation-btn')).not.toBeInTheDocument();
   });
 
   it('renders full awareness report with score, risk level, strengths, and recommendations', () => {
@@ -157,24 +160,100 @@ describe('AwarenessReportView Component', () => {
     expect(handleRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('handles navigation triggers properly', () => {
+  it('renders attack classification section with proper cybersecurity terminology when provided', () => {
+    const reportWithClassification = {
+      ...mockReport,
+      attackClassification: {
+        primaryType: 'spear_phishing',
+        secondaryTechniques: ['urgency_manipulation', 'credential_phishing'],
+        rationale: 'Targets the user with urgent administrative demands and fake credentials request.'
+      }
+    };
+
+    render(
+      <AwarenessReportView
+        report={reportWithClassification}
+        session={{ sessionId: 'sess-email-test-999', status: 'reported', channel: 'email' }}
+      />
+    );
+
+    // Section container
+    const section = screen.getByTestId('report-attack-classification-section');
+    expect(section).toBeInTheDocument();
+    expect(screen.getByText('Social Engineering Attack Classification')).toBeInTheDocument();
+
+    // Primary type
+    const primaryTypeEl = screen.getByTestId('report-primary-attack-type');
+    expect(primaryTypeEl).toBeInTheDocument();
+    expect(primaryTypeEl).toHaveTextContent('Spear Phishing');
+    expect(primaryTypeEl).toHaveTextContent('spear_phishing');
+    expect(screen.getByText(/Targeted phishing attacks customized to specific individuals/i)).toBeInTheDocument();
+
+    // Secondary techniques
+    const secondaryEl = screen.getByTestId('report-secondary-techniques');
+    expect(secondaryEl).toBeInTheDocument();
+    expect(secondaryEl).toHaveTextContent('Urgency Manipulation');
+    expect(secondaryEl).toHaveTextContent('Credential Phishing');
+
+    // Rationale
+    const rationaleEl = screen.getByTestId('report-classification-rationale');
+    expect(rationaleEl).toBeInTheDocument();
+    expect(rationaleEl).toHaveTextContent(/Targets the user with urgent administrative demands/i);
+
+    // Fallback should not be displayed
+    expect(screen.queryByTestId('report-classification-fallback')).not.toBeInTheDocument();
+  });
+
+  it('renders graceful fallback when attack classification is not available', () => {
+    const reportWithoutClassification = {
+      ...mockReport,
+      attackClassification: null
+    };
+
+    render(
+      <AwarenessReportView
+        report={reportWithoutClassification}
+        session={{ sessionId: 'sess-email-test-999', status: 'reported', channel: 'email' }}
+      />
+    );
+
+    const fallbackEl = screen.getByTestId('report-classification-fallback');
+    expect(fallbackEl).toBeInTheDocument();
+    expect(fallbackEl).toHaveTextContent(/Classification unavailable for this scenario/i);
+    expect(screen.queryByTestId('report-primary-attack-type')).not.toBeInTheDocument();
+  });
+
+  it('handles redo simulation action and ensures view simulation action is removed', () => {
     const handleReturn = vi.fn();
-    const handleBack = vi.fn();
+    const handleRedo = vi.fn();
 
     render(
       <AwarenessReportView
         report={mockReport}
         onReturnToGenerator={handleReturn}
-        onBackToSimulation={handleBack}
+        onRedoSimulation={handleRedo}
       />
     );
 
-    const returnBtn = screen.getAllByTestId('return-to-generator-btn')[0];
+    // Old "View Simulation" action must NOT exist anywhere in report view
+    expect(screen.queryByTestId('back-to-simulation-btn')).not.toBeInTheDocument();
+    expect(screen.queryByText(/View Simulation/i)).not.toBeInTheDocument();
+
+    // Redo Simulation button in top header
+    const redoBtn = screen.getByTestId('redo-simulation-btn');
+    expect(redoBtn).toBeInTheDocument();
+    fireEvent.click(redoBtn);
+    expect(handleRedo).toHaveBeenCalledTimes(1);
+
+    // Bottom Redo Simulation button
+    const bottomRedoBtn = screen.getByTestId('bottom-redo-simulation-btn');
+    expect(bottomRedoBtn).toBeInTheDocument();
+    fireEvent.click(bottomRedoBtn);
+    expect(handleRedo).toHaveBeenCalledTimes(2);
+
+    // Return to generator
+    const returnBtn = screen.getByTestId('return-to-generator-btn');
     fireEvent.click(returnBtn);
     expect(handleReturn).toHaveBeenCalledTimes(1);
-
-    const backBtn = screen.getByTestId('back-to-simulation-btn');
-    fireEvent.click(backBtn);
-    expect(handleBack).toHaveBeenCalledTimes(1);
   });
 });

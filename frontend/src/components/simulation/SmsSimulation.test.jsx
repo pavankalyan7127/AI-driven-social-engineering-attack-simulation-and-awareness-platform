@@ -370,4 +370,132 @@ describe('SmsSimulation Component', () => {
       })
     );
   });
+
+  // 13. Mobile Status Bar & Smartphone Shell
+  it('renders native mobile status bar with time, cellular, and battery indicators', () => {
+    render(
+      <SmsSimulation
+        scenario={sampleSmsScenario}
+        sessionId="test-session-sms"
+      />
+    );
+
+    const statusBar = screen.getByTestId('mobile-status-bar');
+    expect(statusBar).toBeInTheDocument();
+    expect(statusBar).toHaveTextContent('9:41');
+    expect(statusBar).toHaveTextContent('94%');
+
+    const container = screen.getByTestId('sms-simulation-container');
+    expect(container).toHaveClass('max-w-[420px]');
+    expect(container).toHaveClass('overflow-hidden');
+  });
+
+  // 14. Prohibits sending empty or whitespace messages
+  it('does not send empty or whitespace messages when send is attempted', () => {
+    const handleAction = vi.fn();
+    render(
+      <SmsSimulation
+        scenario={sampleSmsScenario}
+        sessionId="test-session-sms"
+        onAction={handleAction}
+      />
+    );
+
+    // Open chat
+    fireEvent.click(screen.getAllByText('Apex Bank Fraud Prevention')[0]);
+
+    // Send button should initially be disabled
+    const sendBtn = screen.getByTitle('Send SMS');
+    expect(sendBtn).toBeDisabled();
+
+    // Type spaces only
+    const input = screen.getByPlaceholderText('Text message (SMS)');
+    fireEvent.change(input, { target: { value: '   ' } });
+    expect(sendBtn).toBeDisabled();
+
+    // Press enter on whitespace
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
+
+    // Should not emit message_sent
+    const msgCalls = handleAction.mock.calls.filter(c => c[0].eventType === 'message_sent');
+    expect(msgCalls.length).toBe(0);
+  });
+
+  // 15. Local conversation deletion
+  it('deletes conversation locally, emits interaction_recorded, and returns to inbox', () => {
+    const handleAction = vi.fn();
+    render(
+      <SmsSimulation
+        scenario={sampleSmsScenario}
+        sessionId="test-session-sms"
+        onAction={handleAction}
+      />
+    );
+
+    // Open third conversation (Arjun study group)
+    fireEvent.click(screen.getByText('Arjun (Study Group)'));
+    expect(screen.getByTitle('Back to conversation list')).toBeInTheDocument();
+
+    // Click delete conversation button
+    const deleteBtn = screen.getByTitle('Delete conversation');
+    fireEvent.click(deleteBtn);
+
+    // Should emit interaction_recorded event
+    expect(handleAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'interaction_recorded',
+        metadata: expect.objectContaining({
+          action: 'delete_conversation',
+          conversationId: 'conv-sms-peer',
+        }),
+      })
+    );
+
+    // Should return to inbox
+    expect(screen.getByPlaceholderText('Search SMS conversations')).toBeInTheDocument();
+    expect(screen.getByText('SMS conversation deleted.')).toBeInTheDocument();
+
+    // Deleted conversation is removed from local list
+    expect(screen.queryByText('Arjun (Study Group)')).not.toBeInTheDocument();
+  });
+
+  // 16. Missing optional fields resilience
+  it('renders gracefully when optional scenario fields are omitted', () => {
+    const sparseScenario = {
+      scenarioId: 'scen-sparse-sms',
+      channel: 'sms',
+      title: 'Sparse SMS Scenario',
+      conversations: [
+        {
+          id: 'conv-sparse-1',
+          sender: {
+            phoneNumber: '+1 (555) 999-0000',
+            // No name, no avatar, no badge, no verificationStatus
+          },
+          messages: [
+            {
+              id: 'm-sparse-1',
+              sender: 'contact',
+              text: 'Minimal SMS message content.',
+            }
+          ]
+        }
+      ]
+    };
+
+    render(
+      <SmsSimulation
+        scenario={sparseScenario}
+        sessionId="test-sparse"
+      />
+    );
+
+    // Should render sender's phone number as title
+    expect(screen.getByText('+1 (555) 999-0000')).toBeInTheDocument();
+    expect(screen.getByText('Minimal SMS message content.')).toBeInTheDocument();
+
+    // Opening thread should not crash
+    fireEvent.click(screen.getByText('+1 (555) 999-0000'));
+    expect(screen.getByPlaceholderText('Text message (SMS)')).toBeInTheDocument();
+  });
 });

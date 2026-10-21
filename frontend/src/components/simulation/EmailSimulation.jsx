@@ -24,6 +24,8 @@ import {
   Archive,
   AlertOctagon,
   Trash2,
+  Ban,
+  AlertCircle,
   MailCheck,
   CheckCircle2,
   FolderInput,
@@ -149,6 +151,38 @@ export default function EmailSimulation({
 
   // Security routing details dropdown ("to me ▾")
   const [showSecurityDetails, setShowSecurityDetails] = useState(false);
+
+  // Message 3-dot dropdown menu state (in email card header)
+  const [isMessageMenuOpen, setIsMessageMenuOpen] = useState(false);
+  const messageMenuRef = useRef(null);
+
+  // Toolbar 3-dot dropdown menu state (in top toolbar)
+  const [isToolbarMenuOpen, setIsToolbarMenuOpen] = useState(false);
+  const toolbarMenuRef = useRef(null);
+
+  // Inbox toolbar 3-dot dropdown menu state
+  const [isInboxMenuOpen, setIsInboxMenuOpen] = useState(false);
+  const inboxMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (messageMenuRef.current && !messageMenuRef.current.contains(e.target)) {
+        setIsMessageMenuOpen(false);
+      }
+      if (toolbarMenuRef.current && !toolbarMenuRef.current.contains(e.target)) {
+        setIsToolbarMenuOpen(false);
+      }
+      if (inboxMenuRef.current && !inboxMenuRef.current.contains(e.target)) {
+        setIsInboxMenuOpen(false);
+      }
+    };
+    if (isMessageMenuOpen || isToolbarMenuOpen || isInboxMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMessageMenuOpen, isToolbarMenuOpen, isInboxMenuOpen]);
 
   // Threat Reporting Modal State
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -332,6 +366,103 @@ export default function EmailSimulation({
         scenarioId,
         sessionId,
         indicatorsIdentified: reportIndicators
+      });
+    }
+  };
+
+  // Block Sender action (Positive Termination)
+  const handleBlockSender = () => {
+    setIsMessageMenuOpen(false);
+    const senderEmail = activeEmail?.sender?.email || activeEmail?.securityDetails?.from || 'sender';
+    const senderName = activeEmail?.sender?.name || senderEmail;
+
+    emitEvent('user_blocked_sender', {
+      emailId: activeEmail?.id || targetId,
+      senderEmail,
+      senderName,
+      reportedTarget: activeEmail?.isTarget || activeEmail?.id === targetId
+    });
+
+    handleBackToInbox();
+
+    if (typeof onComplete === 'function') {
+      onComplete({
+        status: 'safe_exit',
+        action: 'user_blocked_sender',
+        scenarioId,
+        sessionId,
+        reason: `Blocked suspicious sender "${senderEmail}"`
+      });
+    }
+  };
+
+  // Report Spam action (Positive Termination)
+  const handleReportSpam = () => {
+    setIsMessageMenuOpen(false);
+    emitEvent('threat_reported', {
+      emailId: activeEmail?.id || targetId,
+      reportType: 'spam',
+      indicators: { reportedAsSpam: true },
+      indicatorCount: 1,
+      reportedTarget: activeEmail?.isTarget || activeEmail?.id === targetId
+    });
+
+    handleBackToInbox();
+
+    if (typeof onComplete === 'function') {
+      onComplete({
+        status: 'reported',
+        action: 'threat_reported',
+        scenarioId,
+        sessionId,
+        indicatorsIdentified: { reportedAsSpam: true }
+      });
+    }
+  };
+
+  // Report Phishing action (Opens Phishing Threat Indicators Modal)
+  const handleReportPhishing = () => {
+    setIsMessageMenuOpen(false);
+    setIsReportModalOpen(true);
+  };
+
+  // Delete Email action (Positive Termination)
+  const handleDeleteEmail = () => {
+    setIsMessageMenuOpen(false);
+    emitEvent('message_deleted', {
+      emailId: activeEmail?.id || targetId,
+      reportedTarget: activeEmail?.isTarget || activeEmail?.id === targetId
+    });
+
+    handleBackToInbox();
+
+    if (typeof onComplete === 'function') {
+      onComplete({
+        status: 'safe_exit',
+        action: 'message_deleted',
+        scenarioId,
+        sessionId,
+        reason: 'User deleted suspicious email'
+      });
+    }
+  };
+
+  // Archive Email action (Positive Termination)
+  const handleArchiveEmail = () => {
+    emitEvent('message_archived', {
+      emailId: activeEmail?.id || targetId,
+      reportedTarget: activeEmail?.isTarget || activeEmail?.id === targetId
+    });
+
+    handleBackToInbox();
+
+    if (typeof onComplete === 'function') {
+      onComplete({
+        status: 'safe_exit',
+        action: 'message_archived',
+        scenarioId,
+        sessionId,
+        reason: 'User archived suspicious email'
       });
     }
   };
@@ -754,9 +885,37 @@ export default function EmailSimulation({
                     <RotateCcw className="w-4 h-4" />
                   </button>
 
-                  <button title="More actions" className="p-2 hover:bg-black/5 rounded-full text-[#444746]">
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
+                  <div className="relative" ref={inboxMenuRef}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsInboxMenuOpen((prev) => !prev);
+                      }}
+                      title="More actions"
+                      aria-label="More inbox actions"
+                      aria-expanded={isInboxMenuOpen}
+                      className={`p-2 hover:bg-black/5 rounded-full text-[#444746] transition-colors ${
+                        isInboxMenuOpen ? 'bg-black/10' : ''
+                      }`}
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+
+                    {isInboxMenuOpen && (
+                      <div className="absolute left-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-xl py-1.5 z-50 text-xs text-[#1f1f1f] font-sans">
+                        <button
+                          onClick={() => {
+                            setIsInboxMenuOpen(false);
+                            setReadIds(new Set(inboxList.map((m) => m.id)));
+                          }}
+                          className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors"
+                        >
+                          <MailCheck className="w-4 h-4 text-gray-500 mr-3 shrink-0" />
+                          <span>Mark all as read</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Right Pagination Controls */}
@@ -944,10 +1103,7 @@ export default function EmailSimulation({
 
                   {/* Archive */}
                   <button
-                    onClick={() => {
-                      emitEvent('message_archived', { emailId: activeEmail.id });
-                      handleBackToInbox();
-                    }}
+                    onClick={handleArchiveEmail}
                     title="Archive"
                     className="p-2 hover:bg-black/5 rounded-full text-[#444746]"
                   >
@@ -965,10 +1121,7 @@ export default function EmailSimulation({
 
                   {/* Delete */}
                   <button
-                    onClick={() => {
-                      emitEvent('message_deleted', { emailId: activeEmail.id });
-                      handleBackToInbox();
-                    }}
+                    onClick={handleDeleteEmail}
                     title="Delete"
                     className="p-2 hover:bg-black/5 rounded-full text-[#444746]"
                   >
@@ -1029,10 +1182,98 @@ export default function EmailSimulation({
                     <Tag className="w-4 h-4" />
                   </button>
 
-                  {/* More actions */}
-                  <button title="More actions" className="p-2 hover:bg-black/5 rounded-full text-[#444746]">
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
+                  {/* More actions dropdown in opened email top toolbar */}
+                  <div className="relative" ref={toolbarMenuRef}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsToolbarMenuOpen((prev) => !prev);
+                      }}
+                      title="More actions"
+                      aria-label="More toolbar options"
+                      aria-expanded={isToolbarMenuOpen}
+                      data-testid="toolbar-more-button"
+                      className={`p-2 hover:bg-black/5 rounded-full text-[#444746] transition-colors ${
+                        isToolbarMenuOpen ? 'bg-black/10' : ''
+                      }`}
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+
+                    {isToolbarMenuOpen && (
+                      <div
+                        data-testid="toolbar-more-menu"
+                        className="absolute left-0 sm:left-auto sm:right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-2xl py-1.5 z-50 text-xs text-[#1f1f1f] font-sans"
+                      >
+                        <button
+                          onClick={() => {
+                            setIsToolbarMenuOpen(false);
+                            setReadIds((prev) => {
+                              const next = new Set(prev);
+                              next.delete(activeEmail.id);
+                              return next;
+                            });
+                            handleBackToInbox();
+                          }}
+                          className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors"
+                        >
+                          <Mail className="w-4 h-4 text-gray-500 mr-3 shrink-0" />
+                          <span>Mark as unread</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setIsToolbarMenuOpen(false);
+                            handleDeleteEmail();
+                          }}
+                          className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors text-gray-900"
+                        >
+                          <Trash2 className="w-4 h-4 text-gray-500 mr-3 shrink-0" />
+                          <span>Delete message</span>
+                        </button>
+
+                        <div className="border-t border-gray-100 my-1" />
+
+                        {/* 1) Block Sender (Positive Termination) */}
+                        <button
+                          onClick={() => {
+                            setIsToolbarMenuOpen(false);
+                            handleBlockSender();
+                          }}
+                          className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors text-gray-900 font-medium"
+                        >
+                          <Ban className="w-4 h-4 text-gray-600 mr-3 shrink-0" />
+                          <span className="truncate">
+                            Block &ldquo;{activeEmail.sender?.email || activeEmail.sender?.name || 'Sender'}&rdquo;
+                          </span>
+                        </button>
+
+                        {/* 2) Report Spam (Positive Termination) */}
+                        <button
+                          onClick={() => {
+                            setIsToolbarMenuOpen(false);
+                            handleReportSpam();
+                          }}
+                          className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors text-gray-900 font-medium"
+                        >
+                          <AlertCircle className="w-4 h-4 text-amber-600 mr-3 shrink-0" />
+                          <span>Report spam</span>
+                        </button>
+
+                        {/* 3) Report Phishing (Positive Termination) */}
+                        <button
+                          onClick={() => {
+                            setIsToolbarMenuOpen(false);
+                            handleReportPhishing();
+                          }}
+                          className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors text-red-600 font-medium"
+                        >
+                          <AlertOctagon className="w-4 h-4 text-red-600 mr-3 shrink-0" />
+                          <span>Report phishing</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Right pagination */}
@@ -1216,9 +1457,140 @@ export default function EmailSimulation({
                       <CornerUpLeft className="w-4 h-4" />
                     </button>
 
-                    <button title="More options" className="p-1.5 hover:bg-black/5 rounded-full">
-                      <MoreVertical className="w-4 h-4" />
-                    </button>
+                    {/* 3-dot More options dropdown */}
+                    <div className="relative" ref={messageMenuRef}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsMessageMenuOpen((prev) => !prev);
+                        }}
+                        title="More options"
+                        aria-label="More options"
+                        aria-expanded={isMessageMenuOpen}
+                        data-testid="message-more-button"
+                        className={`p-1.5 hover:bg-black/5 rounded-full transition-colors ${
+                          isMessageMenuOpen ? 'bg-black/10' : ''
+                        }`}
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+
+                      {isMessageMenuOpen && (
+                        <div
+                          data-testid="message-more-menu"
+                          className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-2xl py-1.5 z-50 text-xs text-[#1f1f1f] font-sans"
+                        >
+                          <button
+                            onClick={() => {
+                              setIsMessageMenuOpen(false);
+                              setIsReplying(true);
+                            }}
+                            className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors"
+                          >
+                            <CornerUpLeft className="w-4 h-4 text-gray-500 mr-3 shrink-0" />
+                            <span>Reply</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsMessageMenuOpen(false);
+                              emitEvent('forward_clicked', { emailId: activeEmail.id });
+                            }}
+                            className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors"
+                          >
+                            <CornerUpRight className="w-4 h-4 text-gray-500 mr-3 shrink-0" />
+                            <span>Forward</span>
+                          </button>
+
+                          <div className="border-t border-gray-100 my-1" />
+
+                          <button
+                            onClick={handleDeleteEmail}
+                            className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors text-gray-900"
+                          >
+                            <Trash2 className="w-4 h-4 text-gray-500 mr-3 shrink-0" />
+                            <span>Delete message</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsMessageMenuOpen(false);
+                              setReadIds((prev) => {
+                                const next = new Set(prev);
+                                next.delete(activeEmail.id);
+                                return next;
+                              });
+                            }}
+                            className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors"
+                          >
+                            <Mail className="w-4 h-4 text-gray-500 mr-3 shrink-0" />
+                            <span>Mark as unread</span>
+                          </button>
+
+                          <div className="border-t border-gray-100 my-1" />
+
+                          {/* 1) Block Sender (Positive Termination) */}
+                          <button
+                            onClick={handleBlockSender}
+                            className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors text-gray-900 font-medium"
+                          >
+                            <Ban className="w-4 h-4 text-gray-600 mr-3 shrink-0" />
+                            <span className="truncate">
+                              Block &ldquo;{activeEmail.sender?.email || activeEmail.sender?.name || 'Sender'}&rdquo;
+                            </span>
+                          </button>
+
+                          {/* 2) Report Spam (Positive Termination) */}
+                          <button
+                            onClick={handleReportSpam}
+                            className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors text-gray-900 font-medium"
+                          >
+                            <AlertCircle className="w-4 h-4 text-amber-600 mr-3 shrink-0" />
+                            <span>Report spam</span>
+                          </button>
+
+                          {/* 3) Report Phishing (Positive Termination) */}
+                          <button
+                            onClick={handleReportPhishing}
+                            className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors text-red-600 font-medium"
+                          >
+                            <ShieldAlert className="w-4 h-4 text-red-500 mr-3 shrink-0" />
+                            <span>Report phishing</span>
+                          </button>
+
+                          <div className="border-t border-gray-100 my-1" />
+
+                          <button
+                            onClick={() => {
+                              setIsMessageMenuOpen(false);
+                              emitEvent('labels_clicked', { emailId: activeEmail.id });
+                            }}
+                            className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors text-gray-600"
+                          >
+                            <SlidersHorizontal className="w-4 h-4 text-gray-400 mr-3 shrink-0" />
+                            <span>Filter messages like this</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsMessageMenuOpen(false);
+                              window.print();
+                            }}
+                            className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors text-gray-600"
+                          >
+                            <Printer className="w-4 h-4 text-gray-400 mr-3 shrink-0" />
+                            <span>Print</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsMessageMenuOpen(false);
+                              emitEvent('download_message', { emailId: activeEmail.id });
+                            }}
+                            className="w-full flex items-center px-4 py-2 hover:bg-gray-100 text-left transition-colors text-gray-600"
+                          >
+                            <Download className="w-4 h-4 text-gray-400 mr-3 shrink-0" />
+                            <span>Download message</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 

@@ -38,6 +38,29 @@ const sessionSchema = new mongoose.Schema(
       default: 'active',
       index: true
     },
+    outcome: {
+      type: String,
+      enum: ['positive', 'negative', 'incomplete', 'abandoned', null],
+      default: null,
+      index: true
+    },
+    triggeredConditionId: {
+      type: String,
+      default: null,
+      trim: true
+    },
+    observationWindowStartedAt: {
+      type: Date,
+      default: null
+    },
+    terminationRules: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
+    attackClassification: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
     startedAt: {
       type: Date,
       required: true,

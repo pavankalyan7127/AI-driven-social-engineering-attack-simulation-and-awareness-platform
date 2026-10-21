@@ -14,6 +14,42 @@ export const sampleScenario = {
   category: "Spear Phishing / Credential Harvesting",
   difficulty: "Medium",
   initialView: "inbox", // 'inbox' or 'email'
+  attackClassification: {
+    primaryType: "spear_phishing",
+    secondaryTechniques: ["impersonation", "urgency_manipulation"],
+    rationale: "Targeted institutional email impersonating campus event team demanding credential reset."
+  },
+  terminationRules: {
+    version: "1.0",
+    observationWindowSeconds: 120,
+    positiveConditions: [
+      {
+        id: "report_threat",
+        trigger: "event",
+        eventType: "threat_reported",
+        points: 30,
+        label: "Reported threat",
+        explanation: "User identified suspicious sender domain and reported the email."
+      },
+      {
+        id: "ignore_after_observation",
+        trigger: "observation_window_elapsed",
+        points: 20,
+        label: "Ignored suspicious email",
+        explanation: "User did not interact with deceptive links during observation window."
+      }
+    ],
+    negativeConditions: [
+      {
+        id: "malicious_link_clicked",
+        trigger: "event",
+        eventType: "simulated_link_clicked",
+        points: 25,
+        label: "Clicked phishing link",
+        explanation: "User clicked the deceptive password reset button."
+      }
+    ]
+  },
   userProfile: {
     name: "Pavan Kalyan",
     email: "pavankalyan.k2023a@vitstudent.ac.in",

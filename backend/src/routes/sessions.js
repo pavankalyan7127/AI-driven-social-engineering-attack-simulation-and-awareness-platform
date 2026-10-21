@@ -4,6 +4,7 @@ import Session, { ALLOWED_CHANNELS, ALLOWED_TERMINAL_STATUSES } from '../models/
 import SimulationEvent from '../models/SimulationEvent.js';
 import { scoreSession, getScoreForSession } from '../services/scoringService.js';
 import { generateAwarenessReport, getAwarenessReport } from '../services/awarenessReportService.js';
+import { finalizeSessionOutcome, startObservationWindow } from '../services/outcomeService.js';
 
 const router = express.Router();
 
@@ -16,7 +17,7 @@ const SESSION_ID_REGEX = /^[a-zA-Z0-9_-]{3,128}$/;
  */
 router.post('/', async (req, res, next) => {
   try {
-    const { scenarioId, channel } = req.body;
+    const { scenarioId, channel, terminationRules, attackClassification } = req.body;
 
     // 1. Validate scenarioId
     if (!scenarioId || typeof scenarioId !== 'string' || !scenarioId.trim()) {
@@ -53,6 +54,8 @@ router.post('/', async (req, res, next) => {
       scenarioId: scenarioId.trim(),
       channel: normalizedChannel,
       status: 'active',
+      terminationRules: terminationRules && typeof terminationRules === 'object' ? terminationRules : null,
+      attackClassification: attackClassification && typeof attackClassification === 'object' ? attackClassification : null,
       startedAt: now,
       updatedAt: now,
       endedAt: null
@@ -229,6 +232,74 @@ router.get('/:sessionId/events', async (req, res, next) => {
       page,
       limit,
       events
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/sessions/:sessionId/observation-window
+ * Starts the scenario observation window countdown using backend timestamp.
+ * Idempotent.
+ */
+router.post('/:sessionId/observation-window', async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+
+    if (!sessionId || !SESSION_ID_REGEX.test(sessionId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid sessionId format.'
+      });
+    }
+
+    const session = await startObservationWindow(sessionId);
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: `Session "${sessionId}" not found.`
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      sessionId,
+      observationWindowStartedAt: session.observationWindowStartedAt
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/sessions/:sessionId/outcome
+ * Evaluates recorded simulation events against termination rules and atomically finalizes outcome.
+ * Single-outcome-wins: First terminal condition locks outcome and score.
+ */
+router.post('/:sessionId/outcome', async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+    const { manualEnd, rulesOverride } = req.body || {};
+
+    if (!sessionId || !SESSION_ID_REGEX.test(sessionId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid sessionId format.'
+      });
+    }
+
+    const result = await finalizeSessionOutcome(sessionId, {
+      manualEnd: Boolean(manualEnd),
+      rulesOverride
+    });
+
+    return res.status(200).json({
+      success: true,
+      sessionId,
+      session: result.session,
+      scoreRecord: result.scoreRecord,
+      outcome: result.finalizedOutcome
     });
   } catch (err) {
     next(err);

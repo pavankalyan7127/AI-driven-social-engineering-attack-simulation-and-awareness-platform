@@ -392,6 +392,7 @@ export async function generateAwarenessReport({
             threatIndicators: reportData.threatIndicators,
             recommendations: reportData.recommendations,
             keyEvents: reportData.keyEvents,
+            attackClassification: session.attackClassification || scenarioMeta?.attackClassification || null,
             status: 'completed',
             providerModel: model
           }

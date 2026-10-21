@@ -397,6 +397,23 @@ export default function WebsiteSimulation({
           </div>
         );
 
+      case 'file-input':
+        return (
+          <div key={idx} className="my-3 space-y-1 text-left">
+            {block.label && (
+              <label className="block text-xs font-semibold text-gray-700">
+                {block.label} {block.required && <span className="text-red-500">*</span>}
+              </label>
+            )}
+            <input
+              type="file"
+              id={block.id}
+              onChange={(e) => handleFieldChange(block.id, e.target.files?.[0]?.name || 'document.pdf')}
+              className="w-full text-xs px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700 file:mr-3 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+            />
+          </div>
+        );
+
       case 'checkbox':
         return (
           <div key={idx} className="my-3 flex items-start gap-2.5 text-left">
