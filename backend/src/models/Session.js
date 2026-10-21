@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-export const ALLOWED_CHANNELS = ['email', 'chat', 'sms', 'website'];
+export const ALLOWED_CHANNELS = ['email', 'chat', 'sms', 'website', 'whatsapp', 'instagram', 'telegram', 'call'];
 export const ALLOWED_STATUSES = ['active', 'completed', 'reported', 'safe_exit', 'abandoned'];
 export const ALLOWED_TERMINAL_STATUSES = ['completed', 'reported', 'safe_exit', 'abandoned'];
 

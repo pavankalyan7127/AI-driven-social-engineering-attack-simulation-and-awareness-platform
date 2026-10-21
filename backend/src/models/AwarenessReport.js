@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-export const ALLOWED_CHANNELS = ['email', 'chat', 'sms', 'website'];
+export const ALLOWED_CHANNELS = ['email', 'chat', 'sms', 'website', 'whatsapp', 'instagram', 'telegram', 'call'];
 export const ALLOWED_RISK_LEVELS = ['low', 'moderate', 'high', 'critical'];
 export const ALLOWED_REPORT_STATUSES = ['generating', 'completed', 'failed'];
 
@@ -137,9 +137,7 @@ const awarenessReportSchema = new mongoose.Schema(
   }
 );
 
-awarenessReportSchema.index({ sessionId: 1 }, { unique: true });
 awarenessReportSchema.index({ riskLevel: 1, generatedAt: -1 });
-awarenessReportSchema.index({ scenarioId: 1 });
 
 export const AwarenessReport =
   mongoose.models.AwarenessReport || mongoose.model('AwarenessReport', awarenessReportSchema);

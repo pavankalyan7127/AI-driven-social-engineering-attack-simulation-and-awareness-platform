@@ -13,9 +13,13 @@ import { ALLOWED_ATTACK_TYPES } from '../config/attackTaxonomy.js';
 export function buildScenarioSystemPrompt(requestedChannel = null) {
   const channelInstruction = requestedChannel
     ? `Strictly generate a "${requestedChannel}" scenario. The "channel" property MUST be "${requestedChannel}".`
-    : `You must automatically analyze the attack vector in the user prompt and predict the single most realistic educational simulation channel. The "channel" property MUST be exactly one of: "email", "chat", "sms", or "website".
+    : `You must automatically analyze the attack vector in the user prompt and predict the single most realistic educational simulation channel. The "channel" property MUST be exactly one of: "email", "chat", "sms", "website", "whatsapp", "instagram", "telegram", or "call".
+- Use "call" (or voice call/phone call) for vishing, fraudulent phone calls, fake bank security voice calls, or voice social engineering where the user receives an incoming telephone call.
+- Use "whatsapp" ONLY if the user prompt specifically mentions WhatsApp (or WhatsApp Web).
+- Use "instagram" ONLY if the user prompt specifically mentions Instagram (or Insta, IG, or Instagram DM).
+- Use "telegram" ONLY if the user prompt specifically mentions Telegram (or Telegram channel/chat/group/bot).
+- Use "chat" for general workplace chat impersonation (Teams/Slack), fake IT helpdesk live requests, tech support scams, or MFA extraction via messaging when no specific platform like WhatsApp, Instagram, or Telegram is named.
 - Use "email" for spear phishing, executive impersonation (BEC), fake security alerts, vendor invoices, or account deactivation notices delivered via email.
-- Use "chat" for workplace chat impersonation (Teams/Slack), fake IT helpdesk live requests, tech support scams, or MFA extraction via messaging.
 - Use "sms" for smishing, bank fraud alerts, package delivery text alerts, or urgent one-time verification links delivered via mobile SMS.
 - Use "website" for counterfeit single sign-on (SSO) login portals, fake verification landing pages, or cloned corporate web pages.`;
 
@@ -67,10 +71,11 @@ IMPORTANT RULES & CONSTRAINTS:
      ]
    }
 
-   FOR "chat":
+   FOR "chat", "whatsapp", "instagram", OR "telegram":
+   (Set "channel" to "whatsapp", "instagram", "telegram", or "chat" matching the user's specific request or context)
    {
      "scenarioId": "scen-chat-xxxx",
-     "channel": "chat",
+     "channel": "whatsapp",
      "title": "Title of attack",
      "description": "Short scenario summary",
      "category": "Chat Impersonation",
@@ -118,6 +123,34 @@ IMPORTANT RULES & CONSTRAINTS:
          ]
        }
      ]
+   }
+
+   FOR "call":
+   {
+     "scenarioId": "scen-call-xxxx",
+     "channel": "call",
+     "title": "Title of voice call attack",
+     "description": "Short scenario summary",
+     "category": "Vishing",
+     "difficulty": "Medium",
+     "initialView": "incoming",
+     "targetId": "call-target-1",
+     "userProfile": { "name": "Student User", "phoneNumber": "+1 (555) 012-3456" },
+     "callData": {
+       "id": "call-target-1",
+       "callerName": "Chase Fraud Prevention Dept",
+       "callerNumber": "+1 (800) 935-9935",
+       "location": "Toll Free • Likely Fraud",
+       "avatar": "CF",
+       "openingLine": "Hello, this is officer David from Chase Bank Fraud Prevention. We flagged two suspicious transactions of $1,250 on your account. To block these charges immediately, please confirm the 16 digits of your credit card number or 4-digit PIN.",
+       "personaContext": "Aggressive, authoritative bank fraud investigator insisting that urgent confirmation of credit card number, CVV, or PIN is needed to prevent loss.",
+       "targetInformation": "credit card number, CVV, or PIN",
+       "fallbackResponses": [
+         "Sir, if you delay, this fraudulent wire transfer will clear in 5 minutes. I need you to confirm your card number immediately.",
+         "I understand your concern, but I am an authorized senior security officer. Read out the numbers on your card so we can secure your funds.",
+         "This call is being recorded for security purposes. Please confirm your card details now."
+       ]
+     }
    }
 
    FOR "website":
@@ -212,6 +245,8 @@ IMPORTANT RULES & CONSTRAINTS:
    - For "chat" and "sms", positive conditions can include "threat_reported", "safe_exit", or "user_blocked_sender".
    - For "website", positive conditions can include "threat_reported" or "safe_exit".
    - For "website", negative condition eventType should be "virtual_link_clicked" or "simulated_form_submitted".
+   - For "call", positive conditions can include "call_rejected", "threat_reported", "user_blocked_sender", or "safe_exit" (or "call_hung_up").
+   - For "call", negative condition eventType MUST be "credential_submitted" or "sensitive_info_disclosed".
    - ONLY include "simulated_form_submitted" or "credential_submitted" if the website page actually contains input fields!
    - NEVER treat opening, viewing, or reading a message ("message_opened", "conversation_opened", "virtual_page_viewed") as a negative failure condition.
    - Condition IDs must be unique strings (e.g. "report_threat", "safe_exit", "malicious_link_clicked").
@@ -447,4 +482,119 @@ export async function generateScenarioWithGroq({
         }
       : undefined
   };
+}
+
+/**
+ * Fallback response analyzer when Groq API key is absent or network fails
+ */
+function fallbackCallResponse(userSpeech, targetInformation) {
+  const text = (userSpeech || '').toLowerCase();
+  
+  // Heuristic sensitive info check: credit card patterns (12-19 digits, spaced or dashed),
+  // 3-4 digit PIN/CVV patterns, or explicit verbal disclosure
+  const hasDigitSequence = /\b(?:\d[ -]*?){4,16}\b/.test(text);
+  const mentionsDisclosure =
+    text.includes('card number is') ||
+    text.includes('my card is') ||
+    text.includes('my pin is') ||
+    text.includes('pin is') ||
+    text.includes('cvv is') ||
+    text.includes('digits are') ||
+    text.includes('password is') ||
+    text.includes('code is');
+
+  const sensitiveInfoDisclosed = hasDigitSequence || mentionsDisclosure;
+
+  if (sensitiveInfoDisclosed) {
+    return {
+      attackerSpeech: "Thank you. Your credentials have been received and verified. The fraud hold on your card is being processed now.",
+      sensitiveInfoDisclosed: true,
+      explanation: "User disclosed numbers or card credential details during the call."
+    };
+  }
+
+  // Refusal or evasion patterns
+  if (text.includes("can't") || text.includes('cannot') || text.includes('won\'t') || text.includes('refuse') || text.includes('no') || text.includes('fake') || text.includes('scam')) {
+    return {
+      attackerSpeech: `Sir, this is an official security alert. If you do not verify your ${targetInformation} right now, we will be forced to permanently freeze your banking privileges.`,
+      sensitiveInfoDisclosed: false,
+      explanation: "User resisted or questioned caller authority."
+    };
+  }
+
+  return {
+    attackerSpeech: `I understand your hesitation, but we have unauthorized international transactions pending. I need you to confirm your ${targetInformation} so we can safeguard your account.`,
+    sensitiveInfoDisclosed: false,
+    explanation: "Caller maintained pressure to extract credentials."
+  };
+}
+
+/**
+ * Generates dynamic voice attacker response during an active phone call simulation.
+ * Performs real-time conversational pressure and checks for sensitive credential leakage.
+ * 
+ * @param {Object} params
+ * @returns {Promise<{ attackerSpeech: string, sensitiveInfoDisclosed: boolean, explanation: string }>}
+ */
+export async function generateCallAttackerResponse({
+  userSpeech,
+  dialogueHistory = [],
+  callerName = 'Bank Security Agent',
+  personaContext = 'Authoritative fraud caller',
+  targetInformation = 'credit card number, CVV, or PIN'
+}) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    return fallbackCallResponse(userSpeech, targetInformation);
+  }
+
+  const groq = new Groq({ apiKey });
+
+  const historyPrompt = Array.isArray(dialogueHistory) && dialogueHistory.length > 0
+    ? dialogueHistory.map(h => `${h.sender === 'user' ? 'User' : 'Caller'}: "${h.text}"`).join('\n')
+    : '(Call just started)';
+
+  const systemPrompt = `You are a social engineering attacker conducting a realistic telephone voice phishing (vishing) simulation for cybersecurity awareness training.
+Your identity/caller name: "${callerName}".
+Your persona: ${personaContext}.
+Your goal: Convince the user to state their ${targetInformation}.
+
+Previous conversation turns:
+${historyPrompt}
+
+The user just spoke: "${userSpeech}".
+
+CRITICAL INSTRUCTIONS:
+1. Did the user state or reveal sensitive credential numbers (such as credit card digits, CVV, 4-digit PIN, OTP, or password)?
+   - If YES (e.g. they read numbers, or said "my card is 4...", "PIN is 1234"), set "sensitiveInfoDisclosed": true.
+   - If NO (e.g. they refused, hesitated, asked questions, said "I can't", or said "Who is this?"), set "sensitiveInfoDisclosed": false.
+2. In "attackerSpeech", reply with 1 to 2 spoken sentences MAXIMUM:
+   - If they refused or hesitated: stay firmly in character, escalate urgency, explain why failure to verify will cause account lock or monetary loss, and firmly demand the ${targetInformation}.
+   - If they disclosed the info: pretend the issue is resolved with fake reassurance (e.g., "Thank you, your verification is confirmed and your account is protected. Goodbye.").
+3. Respond ONLY with a valid JSON object matching:
+{
+  "attackerSpeech": "spoken response text",
+  "sensitiveInfoDisclosed": boolean,
+  "explanation": "brief reason why"
+}`;
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: [{ role: 'system', content: systemPrompt }],
+      temperature: 0.6,
+      max_completion_tokens: 200,
+      response_format: { type: 'json_object' }
+    });
+
+    const parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
+    return {
+      attackerSpeech: parsed.attackerSpeech || "I need you to verify your card details immediately to halt these transactions.",
+      sensitiveInfoDisclosed: Boolean(parsed.sensitiveInfoDisclosed),
+      explanation: parsed.explanation || ''
+    };
+  } catch (err) {
+    console.warn('[Groq Call Response Warning]: Falling back to local analyzer.', err.message);
+    return fallbackCallResponse(userSpeech, targetInformation);
+  }
 }

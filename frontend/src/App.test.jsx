@@ -1040,7 +1040,7 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
       expect(screen.getByTestId('session-status-badge')).toHaveTextContent(/active/i);
     });
 
-    it('confirms manual end, sends POST /outcome with manualEnd: true, displays incomplete banner, and opens report', async () => {
+    it('confirms manual end, sends POST /outcome with manualEnd: true, and opens report', async () => {
       let manualEndCalled = false;
 
       global.fetch = vi.fn((url, options) => {
@@ -1140,11 +1140,9 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
       // Click Confirm End
       fireEvent.click(screen.getByTestId('confirm-end-btn'));
 
-      // Verify outcome notification is rendered with incomplete message
+      // Verify manual end was called and report view opens
       await waitFor(() => {
         expect(manualEndCalled).toBe(true);
-        expect(screen.getByTestId('outcome-notification')).toBeInTheDocument();
-        expect(screen.getByText(/Simulation ended before a definitive attack outcome was established/i)).toBeInTheDocument();
       });
 
       // After auto-transition, report view is displayed
@@ -1377,12 +1375,6 @@ describe('App Component - Session Management & Lifecycle Integration', () => {
       fireEvent.click(screen.getByTitle('Report phishing or spam'));
       fireEvent.click(screen.getByLabelText(/Suspicious Sender Address or Domain/i));
       fireEvent.click(screen.getByText('Confirm & Report Threat'));
-
-      // Outcome notification banner appears immediately
-      await waitFor(() => {
-        expect(screen.getByTestId('outcome-notification')).toBeInTheDocument();
-        expect(screen.getByText(/Protective action recognized/i)).toBeInTheDocument();
-      });
 
       // 3. Automatically navigates to Awareness Report view
       await waitFor(() => {

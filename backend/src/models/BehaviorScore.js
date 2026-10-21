@@ -43,7 +43,7 @@ const behaviorScoreSchema = new mongoose.Schema(
     channel: {
       type: String,
       required: true,
-      enum: ['email', 'chat', 'sms', 'website'],
+      enum: ['email', 'chat', 'sms', 'website', 'whatsapp', 'instagram', 'telegram', 'call'],
       trim: true
     },
     score: {
@@ -119,7 +119,6 @@ const behaviorScoreSchema = new mongoose.Schema(
   }
 );
 
-behaviorScoreSchema.index({ sessionId: 1 }, { unique: true });
 behaviorScoreSchema.index({ riskLevel: 1, calculatedAt: -1 });
 
 export const BehaviorScore =

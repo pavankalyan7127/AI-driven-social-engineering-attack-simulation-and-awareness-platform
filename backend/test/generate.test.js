@@ -201,7 +201,7 @@ describe('POST /api/scenarios/generate - AI Scenario Generation', () => {
     it('rejects invalid or unsupported channel', async () => {
       const res = await request(app)
         .post('/api/scenarios/generate')
-        .send({ prompt: 'Create a phishing attack', channel: 'telegram' });
+        .send({ prompt: 'Create a phishing attack', channel: 'discord' });
 
       expect(res.status).toBe(400);
       expect(res.body.success).toBe(false);
@@ -644,6 +644,47 @@ describe('POST /api/scenarios/generate - AI Scenario Generation', () => {
       const res = await request(app).get('/api/health');
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('ok');
+    });
+  });
+
+  // 9. Voice Call Dynamic Dialogue & Speech Analysis
+  describe('POST /api/scenarios/call/respond', () => {
+    it('analyzes user speech and returns attacker dialogue with sensitive info detection', async () => {
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                attackerSpeech: "Thank you, your card is verified.",
+                sensitiveInfoDisclosed: true,
+                explanation: "User revealed credit card number"
+              })
+            }
+          }
+        ]
+      });
+
+      const res = await request(app)
+        .post('/api/scenarios/call/respond')
+        .send({
+          userSpeech: "My card number is 4231 5555 8888 1234",
+          callerName: "Chase Fraud Prevention",
+          targetInformation: "credit card number"
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.sensitiveInfoDisclosed).toBe(true);
+      expect(res.body.attackerSpeech).toBe("Thank you, your card is verified.");
+    });
+
+    it('returns 400 when userSpeech is missing', async () => {
+      const res = await request(app)
+        .post('/api/scenarios/call/respond')
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
     });
   });
 });

@@ -246,6 +246,12 @@ describe('Security Behavior Scoring Engine - Unit & Service Tests', () => {
         };
       });
 
+      vi.spyOn(SimulationEvent, 'create').mockImplementation(async (data) => {
+        const doc = { ...data };
+        mockEvents.push(doc);
+        return doc;
+      });
+
       vi.spyOn(BehaviorScore, 'findOne').mockImplementation(async (q) => mockScores.get(q.sessionId) || null);
 
       vi.spyOn(BehaviorScore, 'findOneAndUpdate').mockImplementation(async (filter, update) => {
@@ -303,6 +309,21 @@ describe('Security Behavior Scoring Engine - Unit & Service Tests', () => {
       const res = await request(app).post('/api/sessions/sess-ghost-000/score');
       expect(res.status).toBe(404);
       expect(res.body.success).toBe(false);
+    });
+
+    it('synthesizes a terminal event and scores successfully when terminal session has 0 prior events', async () => {
+      mockSessions.set('sess-terminal-call-empty', {
+        sessionId: 'sess-terminal-call-empty',
+        scenarioId: 'scen-call-01',
+        channel: 'call',
+        status: 'safe_exit'
+      });
+
+      const res = await request(app).post('/api/sessions/sess-terminal-call-empty/score');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.score).toBeDefined();
+      expect(res.body.score.channel).toBe('call');
     });
 
     it('returns 400 when session has no interaction events', async () => {

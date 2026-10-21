@@ -48,7 +48,8 @@ import {
   ShieldAlert,
   Info,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Languages
 } from 'lucide-react';
 
 /**
@@ -60,15 +61,18 @@ import {
  * @param {Object} props
  * @param {Object} props.scenario - Validated scenario JSON
  * @param {string} props.sessionId - Current simulation session ID
+ * @param {string} props.deviceMode - 'full' for desktop browser, 'mobile' for smartphone app
  * @param {Function} props.onAction - Reports user interaction events
  * @param {Function} props.onComplete - Notifies parent of terminal state
  */
 export default function EmailSimulation({
   scenario,
   sessionId = 'sess-sim-default',
+  deviceMode = 'full',
   onAction,
   onComplete
 }) {
+  const isMobileView = deviceMode === 'mobile';
   // Graceful fallback if scenario is missing
   if (!scenario || typeof scenario !== 'object') {
     return (
@@ -528,6 +532,1148 @@ export default function EmailSimulation({
     unreadCount: 2684
   };
 
+  // Helper: Render mobile email body blocks
+  const renderMobileEmailBody = (email) => {
+    if (!email) return null;
+
+    if (Array.isArray(email.contentBlocks) && email.contentBlocks.length > 0) {
+      return (
+        <div className="space-y-3.5">
+          {email.contentBlocks.map((block, idx) => {
+            switch (block.type) {
+              case 'paragraph':
+                return (
+                  <p key={idx} className="text-[#e1e3e0] text-sm leading-relaxed whitespace-pre-line">
+                    {block.text}
+                  </p>
+                );
+
+              case 'alert':
+                return (
+                  <div
+                    key={idx}
+                    className={`p-3.5 rounded-xl border flex items-start gap-3 my-2 ${
+                      block.level === 'warning'
+                        ? 'bg-[#29271c] border-[#4b4625] text-[#eed98b]'
+                        : 'bg-[#18262f] border-[#254559] text-[#9ecce6]'
+                    }`}
+                  >
+                    <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="text-xs sm:text-sm">
+                      {block.title && <div className="font-bold mb-1 text-amber-300">{block.title}</div>}
+                      <div className="leading-relaxed">{block.text}</div>
+                    </div>
+                  </div>
+                );
+
+              case 'button':
+                return (
+                  <div key={idx} className="my-3">
+                    <button
+                      onClick={(e) => handleSimulatedAction(e, block)}
+                      className="inline-flex items-center gap-2 bg-[#0b57d0] hover:bg-[#0842a0] active:scale-95 text-white px-5 py-2.5 rounded-full font-medium text-xs sm:text-sm shadow-md transition-all"
+                    >
+                      <span>{block.text || 'Action Required'}</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+
+              case 'link':
+                return (
+                  <div key={idx} className="my-2">
+                    <a
+                      href={block.url || '#'}
+                      onClick={(e) => handleSimulatedAction(e, block)}
+                      className="text-[#8ab4f8] hover:underline font-mono text-xs sm:text-sm break-all inline-flex items-center gap-1"
+                    >
+                      <span>{block.text || block.url}</span>
+                      <ExternalLink className="w-3 h-3 shrink-0" />
+                    </a>
+                  </div>
+                );
+
+              case 'quote':
+                return (
+                  <blockquote
+                    key={idx}
+                    className="pl-3 border-l-2 border-[#3d4941] italic text-[#8e938f] text-xs my-2"
+                  >
+                    {block.text}
+                  </blockquote>
+                );
+
+              case 'signature':
+                return (
+                  <div key={idx} className="pt-3 border-t border-[#242c27] text-xs text-[#8e938f] whitespace-pre-line">
+                    {block.text}
+                  </div>
+                );
+
+              default:
+                return (
+                  <p key={idx} className="text-[#e1e3e0] text-sm leading-relaxed">
+                    {block.text || JSON.stringify(block)}
+                  </p>
+                );
+            }
+          })}
+        </div>
+      );
+    }
+
+    if (typeof email.body === 'string' && email.body.trim()) {
+      return (
+        <div className="space-y-3">
+          {email.body.split('\n\n').map((para, i) => (
+            <p key={i} className="text-[#e1e3e0] text-sm leading-relaxed whitespace-pre-line">
+              {para}
+            </p>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <p className="text-[#e1e3e0] text-sm leading-relaxed whitespace-pre-line">
+        {email.preview || 'No email content provided.'}
+      </p>
+    );
+  };
+
+  // =========================================================================
+  // MOBILE GMAIL EXPERIENCE (Matching Authentic Mobile Screenshots)
+  // Activated when deviceMode === 'mobile'
+  // =========================================================================
+  if (isMobileView) {
+    return (
+      <div className="flex flex-col h-full w-full bg-[#111614] text-[#e1e3e0] font-sans select-none overflow-hidden relative">
+        {/* Mobile Slide-Out Drawer Menu */}
+        {mobileMenuOpen && (
+          <div className="fixed inset-0 z-50 flex">
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+              onClick={() => setMobileMenuOpen(false)}
+            />
+            <div className="relative w-72 max-w-[80vw] bg-[#1a221d] text-[#e1e3e0] h-full shadow-2xl flex flex-col z-10 p-4 border-r border-[#26322b]">
+              <div className="flex items-center justify-between pb-4 border-b border-[#26322b]">
+                <div className="flex items-center gap-2">
+                  <Mail className="w-5 h-5 text-[#6dd58c]" />
+                  <span className="font-bold text-base text-[#e1e3e0]">Gmail</span>
+                </div>
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-1 rounded-full hover:bg-white/10 text-[#8e938f]"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="py-3 text-xs text-[#8e938f] truncate border-b border-[#26322b]">
+                {userProfile.email}
+              </div>
+
+              <div className="flex-1 overflow-y-auto py-3 space-y-1 text-sm font-medium">
+                <button
+                  onClick={() => {
+                    setCurrentView('inbox');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-full transition-colors ${
+                    currentView === 'inbox'
+                      ? 'bg-[#1f382c] text-[#c2eed8] font-bold'
+                      : 'text-[#c2c8c4] hover:bg-white/5'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Inbox className="w-4 h-4" />
+                    <span>Inbox</span>
+                  </div>
+                  <span className="text-xs font-semibold">{filteredMessages.length}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    emitEvent('folder_selected', { folder: 'starred' });
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-[#c2c8c4] hover:bg-white/5 transition-colors"
+                >
+                  <Star className="w-4 h-4" />
+                  <span>Starred</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    emitEvent('folder_selected', { folder: 'snoozed' });
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-[#c2c8c4] hover:bg-white/5 transition-colors"
+                >
+                  <Clock className="w-4 h-4" />
+                  <span>Snoozed</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    emitEvent('folder_selected', { folder: 'sent' });
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-[#c2c8c4] hover:bg-white/5 transition-colors"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Sent</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    emitEvent('folder_selected', { folder: 'drafts' });
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-[#c2c8c4] hover:bg-white/5 transition-colors"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Drafts</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Link Interception Alert Banner */}
+        {linkNotice && (
+          <div className="bg-amber-950/90 border-b border-amber-800/80 px-3 py-2 text-xs text-amber-200 flex items-center justify-between shrink-0 animate-fadeIn z-30">
+            <div className="flex items-center gap-2 overflow-hidden mr-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="truncate">
+                <strong>Link Intercepted:</strong> <code className="bg-amber-900/60 px-1 py-0.5 rounded text-[11px]">{linkNotice.url}</code>
+              </span>
+            </div>
+            <button
+              onClick={() => setLinkNotice(null)}
+              className="text-amber-400 hover:text-white p-1 rounded shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Reply Feedback Banner */}
+        {replySuccessMessage && (
+          <div className="bg-emerald-950/90 border-b border-emerald-800/80 px-3 py-2 text-xs text-emerald-200 flex items-center justify-between shrink-0 animate-fadeIn z-30">
+            <div className="flex items-center gap-2">
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{replySuccessMessage}</span>
+            </div>
+            <button
+              onClick={() => setReplySuccessMessage(null)}
+              className="text-emerald-400 hover:text-white p-1 rounded"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* =================================================================== */}
+        {/* VIEW 4: MOBILE REPLY SCREEN (Screenshot 5)                          */}
+        {/* =================================================================== */}
+        {isReplying && activeEmail ? (
+          <div className="flex flex-col h-full w-full bg-[#111614] text-[#e1e3e0] overflow-hidden">
+            {/* Top Bar */}
+            <div className="h-14 flex items-center justify-between px-2 border-b border-[#202823] shrink-0">
+              <button
+                onClick={() => setIsReplying(false)}
+                title="Discard reply"
+                className="p-2 text-[#c2c8c4] hover:text-white rounded-full hover:bg-white/5"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  title="Attach file"
+                  className="p-2 text-[#c2c8c4] hover:text-white rounded-full hover:bg-white/5"
+                >
+                  <Paperclip className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleSendReply}
+                  title="Send reply"
+                  className="p-2 text-[#5cdbb5] hover:text-[#7ee8c7] rounded-full hover:bg-white/5 active:scale-95"
+                >
+                  <Send className="w-5 h-5" />
+                </button>
+                <button
+                  title="More options"
+                  className="p-2 text-[#c2c8c4] hover:text-white rounded-full hover:bg-white/5"
+                >
+                  <MoreVertical className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* From field */}
+            <div className="flex items-center px-4 py-3 border-b border-[#202823] text-xs sm:text-sm">
+              <span className="text-[#8e938f] w-14 shrink-0">From</span>
+              <span className="text-[#e1e3e0] truncate font-medium">{userProfile.email}</span>
+            </div>
+
+            {/* To field */}
+            <div className="flex items-center px-4 py-3 border-b border-[#202823] text-xs sm:text-sm">
+              <div className="flex items-center gap-1 text-[#8e938f] w-14 shrink-0">
+                <CornerUpLeft className="w-4 h-4" />
+                <ChevronDown className="w-3 h-3" />
+              </div>
+              <div className="flex-1 flex items-center justify-between min-w-0">
+                <div className="inline-flex items-center gap-1.5 bg-[#1c2e24] text-[#c2eed8] px-3 py-1 rounded-full text-xs font-medium max-w-full truncate">
+                  <div className="w-4 h-4 rounded-full bg-[#356149] text-white flex items-center justify-center text-[10px]">
+                    👤
+                  </div>
+                  <span className="truncate">{activeEmail?.sender?.email || activeEmail?.sender?.name}</span>
+                </div>
+                <ChevronDown className="w-4 h-4 text-[#8e938f] shrink-0 ml-1" />
+              </div>
+            </div>
+
+            {/* Subject */}
+            <div className="px-4 py-3 border-b border-[#202823] text-sm text-[#e1e3e0] font-medium">
+              Re: {activeEmail?.subject}
+            </div>
+
+            {/* Body Textarea */}
+            <div className="flex-1 p-4 flex flex-col min-h-0">
+              <textarea
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                placeholder="Compose email"
+                className="w-full flex-1 bg-transparent text-[#e1e3e0] placeholder-[#8e938f] text-sm resize-none focus:outline-none leading-relaxed"
+                autoFocus
+              />
+              <button className="text-[#8e938f] hover:text-[#c2c8c4] text-xs font-mono self-start mt-2 p-1">
+                ...
+              </button>
+            </div>
+          </div>
+        ) : isComposeOpen ? (
+          /* =================================================================== */
+          /* MOBILE COMPOSE SCREEN                                               */
+          /* =================================================================== */
+          <div className="flex flex-col h-full w-full bg-[#111614] text-[#e1e3e0] overflow-hidden">
+            {/* Top Bar */}
+            <div className="h-14 flex items-center justify-between px-2 border-b border-[#202823] shrink-0">
+              <button
+                onClick={() => setIsComposeOpen(false)}
+                title="Discard compose"
+                className="p-2 text-[#c2c8c4] hover:text-white rounded-full hover:bg-white/5"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  title="Attach file"
+                  className="p-2 text-[#c2c8c4] hover:text-white rounded-full hover:bg-white/5"
+                >
+                  <Paperclip className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleSendCompose}
+                  title="Send email"
+                  className="p-2 text-[#5cdbb5] hover:text-[#7ee8c7] rounded-full hover:bg-white/5 active:scale-95"
+                >
+                  <Send className="w-5 h-5" />
+                </button>
+                <button
+                  title="More options"
+                  className="p-2 text-[#c2c8c4] hover:text-white rounded-full hover:bg-white/5"
+                >
+                  <MoreVertical className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* From */}
+            <div className="flex items-center px-4 py-3 border-b border-[#202823] text-xs sm:text-sm">
+              <span className="text-[#8e938f] w-14 shrink-0">From</span>
+              <span className="text-[#e1e3e0] truncate font-medium">{userProfile.email}</span>
+            </div>
+
+            {/* To */}
+            <div className="flex items-center px-4 py-3 border-b border-[#202823] text-xs sm:text-sm">
+              <span className="text-[#8e938f] w-14 shrink-0">To</span>
+              <input
+                type="text"
+                value={composeTo}
+                onChange={(e) => setComposeTo(e.target.value)}
+                placeholder="Recipient"
+                className="flex-1 bg-transparent border-none text-[#e1e3e0] placeholder-[#8e938f] text-sm focus:outline-none"
+              />
+            </div>
+
+            {/* Subject */}
+            <div className="px-4 py-3 border-b border-[#202823] text-sm text-[#e1e3e0]">
+              <input
+                type="text"
+                value={composeSubject}
+                onChange={(e) => setComposeSubject(e.target.value)}
+                placeholder="Subject"
+                className="w-full bg-transparent border-none text-[#e1e3e0] placeholder-[#8e938f] text-sm focus:outline-none font-medium"
+              />
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 p-4 flex flex-col min-h-0">
+              <textarea
+                value={composeBody}
+                onChange={(e) => setComposeBody(e.target.value)}
+                placeholder="Compose email"
+                className="w-full flex-1 bg-transparent text-[#e1e3e0] placeholder-[#8e938f] text-sm resize-none focus:outline-none leading-relaxed"
+                autoFocus
+              />
+            </div>
+          </div>
+        ) : currentView === 'email' && activeEmail ? (
+          /* =================================================================== */
+          /* VIEW 2 & 3: MOBILE OPENED EMAIL VIEW (Screenshots 3 & 4)            */
+          /* =================================================================== */
+          <div className="flex flex-col h-full w-full bg-[#111614] text-[#e1e3e0] overflow-hidden">
+            {/* Top App Bar */}
+            <div className="h-14 flex items-center justify-between px-2 shrink-0 border-b border-[#202823]/50">
+              <button
+                onClick={handleBackToInbox}
+                title="Back to inbox"
+                className="p-2 text-[#c2c8c4] hover:text-white rounded-full hover:bg-white/5"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleArchiveEmail}
+                  title="Archive"
+                  className="p-2 text-[#c2c8c4] hover:text-white rounded-full hover:bg-white/5"
+                >
+                  <Archive className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleDeleteEmail}
+                  title="Delete"
+                  className="p-2 text-[#c2c8c4] hover:text-white rounded-full hover:bg-white/5"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => {
+                    setReadIds((prev) => {
+                      const next = new Set(prev);
+                      next.delete(activeEmail.id);
+                      return next;
+                    });
+                    handleBackToInbox();
+                  }}
+                  title="Mark unread"
+                  className="p-2 text-[#c2c8c4] hover:text-white rounded-full hover:bg-white/5"
+                >
+                  <Mail className="w-5 h-5" />
+                </button>
+
+                {/* Top Toolbar 3-Dot Menu */}
+                <div className="relative" ref={toolbarMenuRef}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsToolbarMenuOpen((prev) => !prev);
+                    }}
+                    title="More options"
+                    aria-label="More options"
+                    data-testid="toolbar-more-button"
+                    className="p-2 text-[#c2c8c4] hover:text-white rounded-full hover:bg-white/5"
+                  >
+                    <MoreVertical className="w-5 h-5" />
+                  </button>
+
+                  {isToolbarMenuOpen && (
+                    <div
+                      data-testid="toolbar-more-menu"
+                      className="absolute right-0 top-full mt-1 w-60 bg-[#1d2521] border border-[#2e3b33] rounded-2xl shadow-2xl py-2 z-50 text-xs text-[#e1e3e0]"
+                    >
+                      <button
+                        onClick={() => {
+                          setIsToolbarMenuOpen(false);
+                          setReadIds((prev) => {
+                            const next = new Set(prev);
+                            next.delete(activeEmail.id);
+                            return next;
+                          });
+                          handleBackToInbox();
+                        }}
+                        className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors"
+                      >
+                        <Mail className="w-4 h-4 text-[#8e938f] mr-3 shrink-0" />
+                        <span>Mark as unread</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsToolbarMenuOpen(false);
+                          handleDeleteEmail();
+                        }}
+                        className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4 text-[#8e938f] mr-3 shrink-0" />
+                        <span>Delete message</span>
+                      </button>
+
+                      <div className="border-t border-[#2e3b33] my-1" />
+
+                      {/* 1) Block Sender (Positive Termination) */}
+                      <button
+                        onClick={() => {
+                          setIsToolbarMenuOpen(false);
+                          handleBlockSender();
+                        }}
+                        className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors text-[#f28b82] font-medium"
+                      >
+                        <Ban className="w-4 h-4 text-[#f28b82] mr-3 shrink-0" />
+                        <span className="truncate">
+                          Block &ldquo;{activeEmail.sender?.name || activeEmail.sender?.email || 'Sender'}&rdquo;
+                        </span>
+                      </button>
+
+                      {/* 2) Report Spam (Positive Termination) */}
+                      <button
+                        onClick={() => {
+                          setIsToolbarMenuOpen(false);
+                          handleReportSpam();
+                        }}
+                        className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors text-[#f28b82] font-medium"
+                      >
+                        <AlertCircle className="w-4 h-4 text-[#f28b82] mr-3 shrink-0" />
+                        <span>Report spam</span>
+                      </button>
+
+                      {/* 3) Report Phishing (Positive Termination) */}
+                      <button
+                        onClick={() => {
+                          setIsToolbarMenuOpen(false);
+                          handleReportPhishing();
+                        }}
+                        className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors text-[#f28b82] font-medium"
+                      >
+                        <AlertOctagon className="w-4 h-4 text-[#f28b82] mr-3 shrink-0" />
+                        <span>Report phishing</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Email Scrollable Content */}
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+              {/* Subject line with Inbox badge & Star */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center flex-wrap gap-2 flex-1">
+                  <h1 className="text-lg sm:text-xl font-normal text-[#e1e3e0] leading-snug">
+                    {activeEmail.subject || '(no subject)'}
+                  </h1>
+                  <span className="bg-[#1c3829] text-[#71d99e] text-[11px] font-medium px-2 py-0.5 rounded">
+                    Inbox
+                  </span>
+                </div>
+                <button
+                  onClick={(e) => handleToggleStar(activeEmail.id, e)}
+                  aria-label={starredIds.has(activeEmail.id) ? 'Starred' : 'Not starred'}
+                  className="p-1 text-[#8e938f] hover:text-amber-400 shrink-0"
+                >
+                  <Star
+                    className={`w-5 h-5 ${
+                      starredIds.has(activeEmail.id) ? 'fill-[#e37400] text-[#e37400]' : 'text-[#8e938f]'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Sender Info Row */}
+              <div className="flex items-start justify-between gap-3 pt-1">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm shrink-0 ${
+                      activeEmail.sender?.avatarBg || 'bg-[#303833] text-[#e1e3e0]'
+                    }`}
+                  >
+                    {activeEmail.sender?.avatar || activeEmail.sender?.name?.charAt(0) || 'U'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-bold text-sm text-[#e1e3e0] truncate">
+                        {activeEmail.sender?.name || 'Sender'}
+                      </span>
+                      <span className="text-xs text-[#8e938f] shrink-0">
+                        {activeEmail.timestamp || 'Yesterday'}
+                      </span>
+                    </div>
+
+                    <div className="relative mt-0.5">
+                      <button
+                        onClick={() => setShowSecurityDetails((prev) => !prev)}
+                        className="flex items-center text-xs text-[#8e938f] hover:text-[#c2c8c4] focus:outline-none"
+                      >
+                        <span>to me</span>
+                        <ChevronDown className="w-3.5 h-3.5 ml-0.5" />
+                      </button>
+
+                      {showSecurityDetails && (
+                        <div className="absolute top-6 left-0 z-30 w-72 sm:w-80 p-3 bg-[#1c2420] border border-[#2e3a33] rounded-xl shadow-xl text-xs text-[#c2c8c4] space-y-1">
+                          <div>
+                            <span className="text-[#8e938f]">From: </span>
+                            {activeEmail.securityDetails?.from || activeEmail.sender?.email}
+                          </div>
+                          <div>
+                            <span className="text-[#8e938f]">To: </span>
+                            {activeEmail.securityDetails?.to || userProfile.email}
+                          </div>
+                          <div>
+                            <span className="text-[#8e938f]">Date: </span>
+                            {activeEmail.securityDetails?.date || activeEmail.fullTimestamp || 'Oct 18, 2026'}
+                          </div>
+                          <div>
+                            <span className="text-[#8e938f]">Security: </span>
+                            {activeEmail.securityDetails?.security || 'Standard encryption (TLS)'}
+                          </div>
+                          {activeEmail.securityDetails?.spf && (
+                            <div>
+                              <span className="text-[#8e938f]">SPF: </span>
+                              <span className="text-amber-400 font-mono">{activeEmail.securityDetails.spf}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: Unsubscribe link + Message 3-dot button */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() =>
+                      emitEvent('simulated_link_clicked', {
+                        actionId: 'unsubscribe',
+                        url: '#',
+                        label: 'Unsubscribe'
+                      })
+                    }
+                    className="text-[#8ab4f8] text-xs font-medium px-1 py-1 hover:underline"
+                  >
+                    Unsubscribe
+                  </button>
+
+                  <div className="relative" ref={messageMenuRef}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsMessageMenuOpen((prev) => !prev);
+                      }}
+                      title="More options"
+                      aria-label="More options"
+                      data-testid="message-more-button"
+                      className="p-1.5 text-[#8e938f] hover:text-[#e1e3e0] rounded-full hover:bg-white/5"
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+
+                    {/* VIEW 3: MESSAGE 3-DOT DROPDOWN MENU (Screenshot 4) */}
+                    {isMessageMenuOpen && (
+                      <div
+                        data-testid="message-more-menu"
+                        className="absolute right-0 top-full mt-1 w-64 bg-[#1d2521] border border-[#2e3b33] rounded-2xl shadow-2xl py-2 z-50 text-xs text-[#e1e3e0] font-sans"
+                      >
+                        <button
+                          onClick={() => {
+                            setIsMessageMenuOpen(false);
+                            setIsReplying(true);
+                          }}
+                          className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors"
+                        >
+                          <CornerUpLeft className="w-4 h-4 text-[#8e938f] mr-3 shrink-0" />
+                          <span>Reply</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setIsMessageMenuOpen(false);
+                            emitEvent('forward_clicked', { emailId: activeEmail.id });
+                          }}
+                          className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors"
+                        >
+                          <CornerUpRight className="w-4 h-4 text-[#8e938f] mr-3 shrink-0" />
+                          <span>Forward</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setIsMessageMenuOpen(false);
+                            emitEvent('chat_rail_clicked', { notice: 'Share in chat' });
+                          }}
+                          className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors"
+                        >
+                          <MessageSquare className="w-4 h-4 text-[#8e938f] mr-3 shrink-0" />
+                          <span>Share in chat</span>
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            setIsMessageMenuOpen(false);
+                            handleToggleStar(activeEmail.id, e);
+                          }}
+                          className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors"
+                        >
+                          <Star className="w-4 h-4 text-[#8e938f] mr-3 shrink-0" />
+                          <span>{starredIds.has(activeEmail.id) ? 'Remove star' : 'Add star'}</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setIsMessageMenuOpen(false);
+                            setReadIds((prev) => {
+                              const next = new Set(prev);
+                              next.delete(activeEmail.id);
+                              return next;
+                            });
+                            handleBackToInbox();
+                          }}
+                          className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors"
+                        >
+                          <Mail className="w-4 h-4 text-[#8e938f] mr-3 shrink-0" />
+                          <span>Mark unread from here</span>
+                        </button>
+
+                        <button
+                          onClick={() => setIsMessageMenuOpen(false)}
+                          className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors"
+                        >
+                          <Languages className="w-4 h-4 text-[#8e938f] mr-3 shrink-0" />
+                          <span>Translate</span>
+                        </button>
+
+                        <button
+                          onClick={() => setIsMessageMenuOpen(false)}
+                          className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors"
+                        >
+                          <Printer className="w-4 h-4 text-[#8e938f] mr-3 shrink-0" />
+                          <span>Print</span>
+                        </button>
+
+                        <div className="border-t border-[#2e3b33] my-1" />
+
+                        {/* Defensive Option 1: Block Sender (Positive Termination) */}
+                        <button
+                          onClick={handleBlockSender}
+                          className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors text-[#f28b82] font-medium"
+                        >
+                          <Ban className="w-4 h-4 text-[#f28b82] mr-3 shrink-0" />
+                          <span className="truncate">
+                            Block &ldquo;{activeEmail.sender?.name || activeEmail.sender?.email || 'Sender'}&rdquo;
+                          </span>
+                        </button>
+
+                        {/* Defensive Option 2: Report Spam (Positive Termination) */}
+                        <button
+                          onClick={handleReportSpam}
+                          className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors text-[#f28b82] font-medium"
+                        >
+                          <AlertCircle className="w-4 h-4 text-[#f28b82] mr-3 shrink-0" />
+                          <span>Report spam</span>
+                        </button>
+
+                        {/* Defensive Option 3: Report Phishing (Positive Termination) */}
+                        <button
+                          onClick={handleReportPhishing}
+                          className="w-full flex items-center px-4 py-2.5 hover:bg-[#26322b] text-left transition-colors text-[#f28b82] font-medium"
+                        >
+                          <AlertOctagon className="w-4 h-4 text-[#f28b82] mr-3 shrink-0" />
+                          <span>Report phishing</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Email Body Content */}
+              <div className="pt-2">
+                {renderMobileEmailBody(activeEmail)}
+              </div>
+
+              {/* Attachments (if any) */}
+              {Array.isArray(activeEmail.attachments) && activeEmail.attachments.length > 0 && (
+                <div className="pt-4 border-t border-[#202823] mt-4">
+                  <div className="text-xs font-semibold text-[#8e938f] mb-2 flex items-center gap-1.5">
+                    <Paperclip className="w-3.5 h-3.5" />
+                    <span>{activeEmail.attachments.length} Attachment</span>
+                  </div>
+                  <div className="space-y-2">
+                    {activeEmail.attachments.map((att) => (
+                      <div
+                        key={att.id}
+                        className="flex items-center justify-between p-2.5 rounded-xl border border-[#2f3832] bg-[#1a221d] hover:bg-[#202b24] transition-colors"
+                      >
+                        <div className="flex items-center gap-2.5 truncate mr-2">
+                          <div className="w-8 h-8 rounded-lg bg-red-950/80 text-red-400 flex items-center justify-center shrink-0">
+                            <FileIcon className="w-4 h-4" />
+                          </div>
+                          <div className="truncate">
+                            <div className="text-xs font-medium text-[#e1e3e0] truncate">{att.name}</div>
+                            <div className="text-[10px] text-[#8e938f]">{att.size}</div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() =>
+                            emitEvent('attachment_downloaded', {
+                              attachmentId: att.id,
+                              fileName: att.name
+                            })
+                          }
+                          className="p-1.5 hover:bg-white/10 rounded-full text-[#8e938f] hover:text-[#c2eed8]"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Bottom 3 Pill Action Buttons (Screenshot 3) */}
+              <div className="flex items-center gap-2 pt-6 pb-4">
+                <button
+                  onClick={() => setIsReplying(true)}
+                  className="flex-1 bg-[#1c3829] hover:bg-[#254835] active:scale-98 text-[#c2eed8] px-4 py-2.5 rounded-full text-xs font-medium flex items-center justify-center gap-2 transition-all"
+                >
+                  <CornerUpLeft className="w-4 h-4" />
+                  <span>Reply</span>
+                </button>
+                <button
+                  onClick={() => emitEvent('forward_clicked', { emailId: activeEmail.id })}
+                  className="flex-1 bg-[#1c3829] hover:bg-[#254835] active:scale-98 text-[#c2eed8] px-4 py-2.5 rounded-full text-xs font-medium flex items-center justify-center gap-2 transition-all"
+                >
+                  <CornerUpRight className="w-4 h-4" />
+                  <span>Forward</span>
+                </button>
+                <button
+                  onClick={() => emitEvent('chat_rail_clicked', { notice: 'Reaction clicked' })}
+                  className="bg-[#1c3829] hover:bg-[#254835] text-[#c2eed8] px-3.5 py-2.5 rounded-full text-xs font-medium flex items-center justify-center transition-all shrink-0"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Bottom Nav Bar (Persistent) */}
+            <nav className="bg-[#131915] border-t border-[#202823] h-16 flex items-center justify-around shrink-0 z-20">
+              <button
+                onClick={() => setCurrentView('inbox')}
+                className="flex flex-col items-center focus:outline-none"
+              >
+                <div className="relative bg-[#1f382c] text-[#c2eed8] px-5 py-1 rounded-full flex items-center justify-center">
+                  <Mail className="w-5 h-5" />
+                  <span className="absolute -top-1 -right-1 bg-[#ba1a1a] text-white text-[9px] font-bold px-1 rounded-full leading-tight">
+                    99+
+                  </span>
+                </div>
+              </button>
+              <button
+                onClick={() => emitEvent('chat_rail_clicked', { notice: 'Mobile chat tab' })}
+                className="p-2 text-[#8e938f] hover:text-[#c2c8c4] focus:outline-none"
+              >
+                <MessageSquare className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => emitEvent('meet_rail_clicked', { notice: 'Mobile meet tab' })}
+                className="p-2 text-[#8e938f] hover:text-[#c2c8c4] focus:outline-none"
+              >
+                <Video className="w-5 h-5" />
+              </button>
+            </nav>
+          </div>
+        ) : (
+          /* =================================================================== */
+          /* VIEW 1: MOBILE INBOX LIST VIEW (Screenshot 2)                       */
+          /* =================================================================== */
+          <div className="flex flex-col h-full w-full bg-[#111614] text-[#e1e3e0] overflow-hidden">
+            {/* Search Pill Bar (Screenshot 2) */}
+            <div className="px-3 pt-3 pb-2 shrink-0">
+              <div className="bg-[#242c27] rounded-full px-4 py-2.5 flex items-center shadow-sm">
+                <button
+                  onClick={() => setMobileMenuOpen(true)}
+                  aria-label="Main menu"
+                  className="text-[#c2c8c4] hover:text-white mr-3 p-0.5"
+                >
+                  <Menu className="w-5 h-5" />
+                </button>
+                <input
+                  type="text"
+                  placeholder="Search in mail"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="bg-transparent border-none text-[#e1e3e0] placeholder-[#8e938f] text-sm flex-1 focus:outline-none"
+                />
+                <div className="w-7 h-7 rounded-full bg-[#5c3e38] text-white flex items-center justify-center text-xs font-semibold shrink-0 cursor-pointer">
+                  {userProfile.avatar || userProfile.name?.charAt(0) || 'P'}
+                </div>
+              </div>
+            </div>
+
+            {/* Section Header */}
+            <div className="px-5 py-1 text-xs font-medium text-[#8e938f]">
+              Inbox
+            </div>
+
+            {/* Message List */}
+            <div className="flex-1 overflow-y-auto divide-y divide-transparent pb-24">
+              {filteredMessages.length === 0 ? (
+                <div className="p-8 text-center text-[#8e938f]">
+                  <p className="text-sm font-medium">No messages found</p>
+                </div>
+              ) : (
+                filteredMessages.map((msg) => {
+                  const isUnread = !readIds.has(msg.id) && (msg.isUnread ?? true);
+                  const isStarred = starredIds.has(msg.id);
+
+                  return (
+                    <div
+                      key={msg.id}
+                      onClick={() => handleOpenEmail(msg)}
+                      className="flex items-start px-4 py-3 gap-3.5 hover:bg-[#18211b] active:bg-[#1f2b23] cursor-pointer transition-colors"
+                    >
+                      {/* Avatar */}
+                      <div
+                        className={`w-10 h-10 rounded-full shrink-0 flex items-center justify-center font-bold text-sm ${
+                          msg.sender?.avatarBg || 'bg-[#2f3832] text-[#c2c8c4]'
+                        }`}
+                      >
+                        {msg.sender?.avatar || msg.sender?.name?.charAt(0) || 'U'}
+                      </div>
+
+                      {/* Content Column */}
+                      <div className="flex-1 min-w-0">
+                        {/* Sender & Timestamp */}
+                        <div className="flex items-center justify-between">
+                          <span
+                            className={`text-sm truncate ${
+                              isUnread ? 'font-bold text-[#e1e3e0]' : 'font-normal text-[#c2c8c4]'
+                            }`}
+                          >
+                            {msg.sender?.name || 'Sender'}
+                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                            <span
+                              className={`text-xs ${
+                                isUnread ? 'font-semibold text-[#8e938f]' : 'text-[#6e7470]'
+                              }`}
+                            >
+                              {msg.timestamp || 'Today'}
+                            </span>
+                            {isUnread && (
+                              <span className="w-2 h-2 rounded-full bg-[#6dd58c] shrink-0" />
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Subject */}
+                        <div
+                          className={`text-xs sm:text-sm truncate mt-0.5 ${
+                            isUnread ? 'font-bold text-[#e1e3e0]' : 'font-normal text-[#a6aca6]'
+                          }`}
+                        >
+                          {msg.subject || '(no subject)'}
+                        </div>
+
+                        {/* Snippet + Star */}
+                        <div className="flex items-center justify-between gap-2 mt-0.5">
+                          <p className="text-xs text-[#8e938f] truncate flex-1 leading-relaxed">
+                            {msg.preview || msg.bodySnippet || msg.bodyText || ''}
+                          </p>
+                          <button
+                            onClick={(e) => handleToggleStar(msg.id, e)}
+                            aria-label={isStarred ? 'Starred' : 'Not starred'}
+                            className="p-1 text-[#8e938f] hover:text-amber-400 shrink-0"
+                          >
+                            <Star
+                              className={`w-4 h-4 ${
+                                isStarred ? 'fill-[#e37400] text-[#e37400]' : 'text-[#8e938f]'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Floating Compose Button (FAB) (Screenshot 2) */}
+            <div className="absolute bottom-20 right-4 z-20">
+              <button
+                onClick={() => setIsComposeOpen(true)}
+                className="flex items-center gap-2 bg-[#004d40] hover:bg-[#005a4b] active:scale-95 text-[#c2eed8] px-4 py-3.5 rounded-2xl shadow-xl transition-all font-medium text-sm"
+              >
+                <Pen className="w-5 h-5" />
+                <span>Compose</span>
+              </button>
+            </div>
+
+            {/* Bottom Nav Bar (Persistent) */}
+            <nav className="bg-[#131915] border-t border-[#202823] h-16 flex items-center justify-around shrink-0 z-20">
+              <button
+                onClick={() => setCurrentView('inbox')}
+                className="flex flex-col items-center focus:outline-none"
+              >
+                <div className="relative bg-[#1f382c] text-[#c2eed8] px-5 py-1 rounded-full flex items-center justify-center">
+                  <Mail className="w-5 h-5" />
+                  <span className="absolute -top-1 -right-1 bg-[#ba1a1a] text-white text-[9px] font-bold px-1 rounded-full leading-tight">
+                    99+
+                  </span>
+                </div>
+              </button>
+              <button
+                onClick={() => emitEvent('chat_rail_clicked', { notice: 'Mobile chat tab' })}
+                className="p-2 text-[#8e938f] hover:text-[#c2c8c4] focus:outline-none"
+              >
+                <MessageSquare className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => emitEvent('meet_rail_clicked', { notice: 'Mobile meet tab' })}
+                className="p-2 text-[#8e938f] hover:text-[#c2c8c4] focus:outline-none"
+              >
+                <Video className="w-5 h-5" />
+              </button>
+            </nav>
+          </div>
+        )}
+
+        {/* Threat Reporting Modal in Mobile View */}
+        {isReportModalOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn"
+          >
+            <div className="bg-[#1d2521] text-[#e1e3e0] rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-[#2e3b33]">
+              <div className="px-5 py-4 bg-[#261f20] border-b border-[#3b2a2b] flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-red-900/60 text-red-400 flex items-center justify-center shrink-0">
+                    <ShieldAlert className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-[#e1e3e0]">
+                      Report Phishing Threat
+                    </h3>
+                    <p className="text-[11px] text-[#8e938f]">
+                      Flag suspicious indicators
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsReportModalOpen(false)}
+                  className="p-1 rounded-full text-[#8e938f] hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-2.5 text-xs">
+                <label className="flex items-start gap-2.5 p-2 rounded-lg bg-[#222c26] hover:bg-[#28352d] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={reportIndicators.suspiciousSender}
+                    onChange={(e) =>
+                      setReportIndicators((prev) => ({
+                        ...prev,
+                        suspiciousSender: e.target.checked
+                      }))
+                    }
+                    className="mt-0.5 rounded border-gray-600 text-red-600 focus:ring-0"
+                  />
+                  <span>Suspicious or spoofed sender address</span>
+                </label>
+
+                <label className="flex items-start gap-2.5 p-2 rounded-lg bg-[#222c26] hover:bg-[#28352d] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={reportIndicators.urgentActionThreat}
+                    onChange={(e) =>
+                      setReportIndicators((prev) => ({
+                        ...prev,
+                        urgentActionThreat: e.target.checked
+                      }))
+                    }
+                    className="mt-0.5 rounded border-gray-600 text-red-600 focus:ring-0"
+                  />
+                  <span>Artificial urgency or coercive language</span>
+                </label>
+
+                <label className="flex items-start gap-2.5 p-2 rounded-lg bg-[#222c26] hover:bg-[#28352d] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={reportIndicators.credentialHarvestLink}
+                    onChange={(e) =>
+                      setReportIndicators((prev) => ({
+                        ...prev,
+                        credentialHarvestLink: e.target.checked
+                      }))
+                    }
+                    className="mt-0.5 rounded border-gray-600 text-red-600 focus:ring-0"
+                  />
+                  <span>Suspicious link or credential harvesting prompt</span>
+                </label>
+              </div>
+
+              <div className="px-4 py-3 bg-[#171f1a] border-t border-[#26322b] flex items-center justify-end gap-2">
+                <button
+                  onClick={() => setIsReportModalOpen(false)}
+                  className="px-3 py-1.5 rounded-full text-xs text-[#8e938f] hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmReport}
+                  className="px-4 py-1.5 rounded-full text-xs font-semibold bg-red-700 hover:bg-red-600 text-white shadow-xs"
+                >
+                  Submit Report
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Terminal Overlay in Mobile View */}
+        {isTerminal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+            <div className="bg-[#1a221d] text-[#e1e3e0] rounded-2xl shadow-2xl max-w-xs w-full p-5 text-center border border-[#2f3832]">
+              <div className="w-10 h-10 bg-[#1c3829] text-[#71d99e] rounded-full flex items-center justify-center mx-auto mb-2.5">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <h2 className="text-base font-bold mb-1.5">Simulation Concluded</h2>
+              <p className="text-xs text-[#8e938f] mb-4">
+                Telemetry and threat response recorded.
+              </p>
+              <button
+                onClick={() => {
+                  setIsTerminal(false);
+                  emitEvent('scenario_completed', { status: 'concluded' });
+                }}
+                className="w-full bg-[#004d40] hover:bg-[#005a4b] text-[#c2eed8] py-2 rounded-xl text-xs font-semibold"
+              >
+                View Telemetry
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // DESKTOP GMAIL VIEW (Unchanged - Website View)
+  // =========================================================================
   return (
     <div className="flex flex-col h-screen w-full bg-[#f6f8fc] text-[#1f1f1f] select-none overflow-hidden font-sans antialiased">
       {/* ============================================================== */}

@@ -9,7 +9,6 @@ import {
   ShieldCheck,
   AlertTriangle,
   AlertOctagon,
-  LogOut,
   MoreVertical,
   X,
   ExternalLink,
@@ -21,14 +20,39 @@ import {
   Info,
   ChevronRight,
   CheckCircle2,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Star,
+  Puzzle,
+  Shield,
+  Minus,
+  Square,
+  Sparkles,
+  Camera,
+  Folder,
+  Eye,
+  EyeOff,
+  Bookmark,
+  Printer,
+  History,
+  Settings,
+  HelpCircle,
+  Flag,
+  MessageSquare
 } from 'lucide-react';
 
 /**
  * WebsiteSimulation Component
  * 
- * Reusable, data-driven virtual browser simulation for AI-driven social engineering attack training.
- * Provides an isolated browser shell, navigation history, and allowlisted block renderer.
+ * 100% Real Google Chrome Browser Replication (Pixel-Perfect Chrome Skin).
+ * Reproduces:
+ * - Chrome dark title bar with curved tabs, favicon, Ask Gemini button, and window controls.
+ * - Chrome Omnibox toolbar with Back, Forward, Reload, "Not secure" / padlock SSL chip, URL highlighting, bookmark star, Lens, extension puzzle icon, profile avatar, and 3-dot Chrome menu.
+ * - Chrome Bookmarks bar.
+ * - Chrome 3-Dot Dropdown Menu matching real Chrome, featuring "Help > Report an issue... / Report an unsafe site...".
+ * - "Send feedback to Google" Chrome dialog matching Screenshot 2 with issue description, URL, email, checkboxes, and Send button.
+ * - High-fidelity virtual webpage block renderer with multi-page navigation and form submission.
+ * - Positive termination upon reporting threat via Chrome Help menu.
+ * - Negative termination upon credential form submission or malicious link click.
  * 
  * @param {Object} props
  * @param {Object} props.scenario - Validated scenario JSON
@@ -45,11 +69,11 @@ export default function WebsiteSimulation({
   // Graceful fallback if scenario is missing
   if (!scenario || typeof scenario !== 'object') {
     return (
-      <div className="flex items-center justify-center h-full min-h-[400px] p-6 bg-gray-50 text-gray-700 font-sans">
-        <div className="text-center p-8 bg-white border border-gray-200 rounded-xl shadow-sm max-w-md">
+      <div className="flex items-center justify-center h-full min-h-[400px] p-6 bg-[#202124] text-gray-200 font-sans">
+        <div className="text-center p-8 bg-[#292a2d] border border-[#3c4043] rounded-2xl shadow-xl max-w-md">
           <AlertOctagon className="w-12 h-12 text-red-500 mx-auto mb-3" />
-          <h2 className="text-lg font-semibold mb-2">Scenario Unavailable</h2>
-          <p className="text-sm text-gray-600 mb-4">
+          <h2 className="text-lg font-bold text-white mb-2">Scenario Unavailable</h2>
+          <p className="text-xs text-gray-400 mb-4">
             No valid website attack scenario data was provided to the simulation runner.
           </p>
         </div>
@@ -73,34 +97,49 @@ export default function WebsiteSimulation({
 
   // Local Form state per page: { [fieldId]: value }
   const [formValues, setFormValues] = useState({});
+  const [passwordMasked, setPasswordMasked] = useState(true);
 
   // Browser Address bar text (mirrors current page URL)
-  const currentUrl = currentPage?.url || `https://${scenario.browserConfig?.defaultDomain || 'virtual-browser.simulation'}/${currentPageId}`;
+  const currentUrl = currentPage?.url || `https://${scenario.browserConfig?.defaultDomain || 'vtop.vit.ac.in'}/${currentPageId}`;
 
   // Security status & popover
   const securityStatus = scenario.browserConfig?.securityStatus || (currentPage?.isTargetPhish ? 'unsecured' : 'secure');
   const [showSecurityPopover, setShowSecurityPopover] = useState(false);
 
-  // Threat Reporting Modal State
-  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-  const [reportIndicators, setReportIndicators] = useState({
-    lookalikeDomain: false,
-    untrustedCertificate: false,
-    credentialHarvestingFields: false,
-    artificialUrgencyNotice: false,
-    portalImpersonation: false
-  });
-  const [reportNotes, setReportNotes] = useState('');
-  const [threatReportedConfirmed, setThreatReportedConfirmed] = useState(false);
+  // Chrome 3-Dot Menu State & Submenu
+  const [isChromeMenuOpen, setIsChromeMenuOpen] = useState(false);
+  const [isHelpSubmenuOpen, setIsHelpSubmenuOpen] = useState(false);
+  const chromeMenuRef = useRef(null);
 
-  // Safe Exit Modal State
-  const [isSafeExitModalOpen, setIsSafeExitModalOpen] = useState(false);
+  // Chrome "Send feedback to Google" Modal State (Screenshot 2)
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackEmail, setFeedbackEmail] = useState('pavankalyan7127@gmail.com');
+  const [includeScreenshot, setIncludeScreenshot] = useState(false);
+  const [sendSysInfo, setSendSysInfo] = useState(true);
+  const [emailForUpdates, setEmailForUpdates] = useState(false);
 
   // In-app educational intercept notice
   const [linkNotice, setLinkNotice] = useState(null);
 
   // Single scenario_viewed event tracker to prevent duplicate emissions on rerender
   const hasEmittedViewed = useRef(false);
+
+  // Close Chrome menu on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (chromeMenuRef.current && !chromeMenuRef.current.contains(event.target)) {
+        setIsChromeMenuOpen(false);
+        setIsHelpSubmenuOpen(false);
+      }
+    }
+    if (isChromeMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isChromeMenuOpen]);
 
   // Safe Event Dispatcher
   const emitEvent = (eventType, metadata = {}) => {
@@ -162,14 +201,12 @@ export default function WebsiteSimulation({
     setShowSecurityPopover(false);
 
     if (!targetPageId || !pagesMap[targetPageId]) {
-      // Unknown destination handling
       emitEvent('virtual_navigation', {
         fromPageId: currentPageId,
         targetPageId,
         status: 'page_not_found',
         ...actionMeta
       });
-      // Push unknown page to history to display 404 state
       const nextHistory = history.slice(0, historyIndex + 1).concat(targetPageId || 'unknown');
       setHistory(nextHistory);
       setHistoryIndex(nextHistory.length - 1);
@@ -222,79 +259,95 @@ export default function WebsiteSimulation({
     });
   };
 
-  // Form field value change
-  const handleFieldChange = (fieldId, val) => {
-    setFormValues(prev => ({ ...prev, [fieldId]: val }));
+  // Field change in form blocks
+  const handleFieldChange = (fieldId, value) => {
+    setFormValues(prev => ({
+      ...prev,
+      [fieldId]: value
+    }));
+
     emitEvent('form_interaction', {
       fieldId,
-      pageId: currentPageId
+      hasValue: Boolean(value && value.length > 0)
     });
   };
 
-  // Form submit button action
-  const handleFormSubmit = (e, block) => {
+  // Button clicks inside virtual webpage
+  const handleButtonClick = (e, block) => {
     if (e) e.preventDefault();
 
-    emitEvent('simulated_form_submitted', {
+    const buttonLabel = block.label || block.text || 'Submit';
+
+    emitEvent('form_interaction', {
+      action: 'button_clicked',
       buttonId: block.id,
-      actionId: block.actionId || 'submit_form',
-      pageId: currentPageId,
-      targetPageId: block.targetPageId,
-      hasProvidedInput: Object.keys(formValues).length > 0
+      buttonText: buttonLabel,
+      targetPageId: block.targetPageId
     });
 
+    const isSubmitButton =
+      block.isSubmit ||
+      block.type === 'button' &&
+      (buttonLabel.toLowerCase().includes('sign in') ||
+        buttonLabel.toLowerCase().includes('log in') ||
+        buttonLabel.toLowerCase().includes('submit') ||
+        buttonLabel.toLowerCase().includes('verify'));
+
+    if (isSubmitButton) {
+      const submittedFields = Object.keys(formValues).filter(k => Boolean(formValues[k]));
+
+      emitEvent('simulated_form_submitted', {
+        formId: block.id || 'virtual_form',
+        pageId: currentPageId,
+        fieldsSubmittedCount: submittedFields.length,
+        isTargetPhish: Boolean(currentPage?.isTargetPhish)
+      });
+
+      emitEvent('credential_submitted', {
+        pageId: currentPageId,
+        phishDetected: Boolean(currentPage?.isTargetPhish)
+      });
+    }
+
     if (block.targetPageId) {
-      handleNavigate(block.targetPageId, { trigger: 'form_submit' });
+      handleNavigate(block.targetPageId, { buttonId: block.id });
     }
   };
 
-  // Simulated link click
-  const handleSimulatedLink = (e, block) => {
+  // Simulated link clicks inside webpage
+  const handleVirtualLinkClick = (e, block) => {
     if (e) e.preventDefault();
 
     emitEvent('virtual_link_clicked', {
       linkId: block.id,
+      url: block.url,
       text: block.text,
-      targetPageId: block.targetPageId,
-      url: block.url || '#'
+      targetPhish: Boolean(currentPage?.isTargetPhish)
+    });
+
+    setLinkNotice({
+      url: block.url || '#',
+      text: 'Simulated link intercepted within virtual browser sandbox.'
     });
 
     if (block.targetPageId) {
-      handleNavigate(block.targetPageId, { trigger: 'link_click' });
-    } else {
-      setLinkNotice({
-        text: block.text,
-        url: block.url || currentUrl
-      });
+      handleNavigate(block.targetPageId, { linkId: block.id });
     }
   };
 
-  // Indicator checklist selection
-  const handleToggleIndicator = (key) => {
-    const nextVal = !reportIndicators[key];
-    setReportIndicators(prev => ({ ...prev, [key]: nextVal }));
-
-    emitEvent('warning_sign_selected', {
-      indicatorKey: key,
-      selected: nextVal
-    });
-  };
-
-  // Confirm threat report
-  const handleConfirmThreatReport = () => {
-    const selectedCount = Object.values(reportIndicators).filter(Boolean).length;
+  // 1. Submit Google Chrome Report / Send Feedback (Positive Defensive Termination)
+  const handleSendFeedback = () => {
+    setIsFeedbackModalOpen(false);
+    setIsChromeMenuOpen(false);
+    setIsHelpSubmenuOpen(false);
 
     emitEvent('threat_reported', {
-      pageId: currentPageId,
+      reportedVia: 'chrome_feedback',
+      issueDescription: feedbackText || 'Counterfeit phishing website detected on unverified domain.',
       virtualUrl: currentUrl,
-      indicators: reportIndicators,
-      indicatorCount: selectedCount,
-      notes: reportNotes,
+      email: feedbackEmail,
       reportedTarget: Boolean(currentPage?.isTargetPhish)
     });
-
-    setIsReportModalOpen(false);
-    setThreatReportedConfirmed(true);
 
     if (typeof onComplete === 'function') {
       onComplete({
@@ -302,29 +355,47 @@ export default function WebsiteSimulation({
         action: 'threat_reported',
         scenarioId,
         sessionId,
-        indicatorsIdentified: reportIndicators
+        reason: 'Reported unsafe website via Google Chrome feedback'
       });
     }
   };
 
-  // Confirm safe exit
-  const handleConfirmSafeExit = () => {
+  // 2. Chrome Menu Exit Action (Safe Exit Positive Termination)
+  const handleChromeExit = () => {
+    setIsChromeMenuOpen(false);
+    setIsHelpSubmenuOpen(false);
+
     emitEvent('safe_exit', {
-      reason: 'user_initiated_safe_exit',
+      reason: 'user_closed_chrome_window',
       pageId: currentPageId
     });
-
-    setIsSafeExitModalOpen(false);
 
     if (typeof onComplete === 'function') {
       onComplete({
         status: 'safe_exit',
         action: 'safe_exit',
         scenarioId,
-        sessionId
+        sessionId,
+        reason: 'User recognized suspicious page and closed the Chrome browser window'
       });
     }
   };
+
+  // Parse hostname and path for realistic Omnibox URL highlighting
+  const { hostPart, pathPart } = useMemo(() => {
+    try {
+      const urlObj = new URL(currentUrl);
+      return {
+        hostPart: `${urlObj.protocol}//${urlObj.host}`,
+        pathPart: urlObj.pathname + urlObj.search
+      };
+    } catch {
+      return {
+        hostPart: currentUrl,
+        pathPart: ''
+      };
+    }
+  }, [currentUrl]);
 
   // Block Renderer
   const renderBlock = (block, idx) => {
@@ -379,7 +450,8 @@ export default function WebsiteSimulation({
       }
 
       case 'text-input':
-      case 'email-input':
+      case 'email-input': {
+        const isMaskedField = block.isMasked || block.type === 'password-input';
         return (
           <div key={idx} className="my-3 space-y-1 text-left">
             {block.label && (
@@ -387,15 +459,28 @@ export default function WebsiteSimulation({
                 {block.label} {block.required && <span className="text-red-500">*</span>}
               </label>
             )}
-            <input
-              type={block.isMasked ? 'password' : block.type === 'email-input' ? 'email' : 'text'}
-              value={formValues[block.id] || ''}
-              onChange={(e) => handleFieldChange(block.id, e.target.value)}
-              placeholder={block.placeholder || ''}
-              className="w-full text-xs sm:text-sm px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all bg-white text-gray-900 placeholder-gray-400"
-            />
+            <div className="relative">
+              <input
+                type={isMaskedField ? (passwordMasked ? 'password' : 'text') : block.type === 'email-input' ? 'email' : 'text'}
+                value={formValues[block.id] || ''}
+                onChange={(e) => handleFieldChange(block.id, e.target.value)}
+                placeholder={block.placeholder || ''}
+                className="w-full text-xs sm:text-sm px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all bg-white text-gray-900 placeholder-gray-400"
+              />
+              {isMaskedField && (
+                <button
+                  type="button"
+                  onClick={() => setPasswordMasked(prev => !prev)}
+                  className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600"
+                  tabIndex={-1}
+                >
+                  {passwordMasked ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </button>
+              )}
+            </div>
           </div>
         );
+      }
 
       case 'file-input':
         return (
@@ -408,128 +493,146 @@ export default function WebsiteSimulation({
             <input
               type="file"
               id={block.id}
-              onChange={(e) => handleFieldChange(block.id, e.target.files?.[0]?.name || 'document.pdf')}
-              className="w-full text-xs px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700 file:mr-3 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+              onChange={(e) => handleFieldChange(block.id, e.target.files?.[0]?.name || 'file_uploaded')}
+              className="w-full text-xs text-gray-600 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
             />
           </div>
         );
 
       case 'checkbox':
         return (
-          <div key={idx} className="my-3 flex items-start gap-2.5 text-left">
+          <label key={idx} className="flex items-start gap-2.5 my-3 cursor-pointer select-none text-left">
             <input
               type="checkbox"
-              id={block.id || `chk-${idx}`}
-              checked={formValues[block.id] !== undefined ? formValues[block.id] : Boolean(block.defaultChecked)}
+              id={block.id}
+              checked={Boolean(formValues[block.id])}
               onChange={(e) => handleFieldChange(block.id, e.target.checked)}
-              className="mt-0.5 rounded text-blue-600 focus:ring-0 cursor-pointer"
+              className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
             />
-            <label htmlFor={block.id || `chk-${idx}`} className="text-xs text-gray-700 cursor-pointer select-none">
+            <span className="text-xs sm:text-sm text-gray-700 leading-snug">
               {block.label}
-            </label>
-          </div>
+            </span>
+          </label>
         );
 
-      case 'button': {
-        const isPrimary = block.variant === 'primary' || !block.variant;
-        const isDanger = block.variant === 'danger';
-
+      case 'button':
         return (
-          <div key={idx} className="my-3">
+          <div key={idx} className="my-4">
             <button
-              onClick={(e) => handleFormSubmit(e, block)}
-              className={`w-full sm:w-auto px-5 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all shadow-2xs ${
-                isDanger
-                  ? 'bg-red-600 hover:bg-red-700 text-white'
-                  : isPrimary
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                  : 'bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-300'
-              }`}
+              onClick={(e) => handleButtonClick(e, block)}
+              className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs sm:text-sm rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
             >
-              {block.label || 'Submit'}
+              <span>{block.label || block.text}</span>
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         );
-      }
 
       case 'simulated-link':
         return (
-          <div key={idx} className="my-2 text-left">
-            <button
-              onClick={(e) => handleSimulatedLink(e, block)}
-              className="text-xs sm:text-sm text-blue-600 hover:underline inline-flex items-center gap-1 font-medium"
+          <div key={idx} className="my-3 text-center sm:text-left">
+            <a
+              href={block.url || '#'}
+              onClick={(e) => handleVirtualLinkClick(e, block)}
+              className="text-xs sm:text-sm text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 cursor-pointer"
             >
               <span>{block.text || block.url}</span>
-              <ExternalLink className="w-3 h-3" />
-            </button>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
           </div>
         );
 
       case 'card':
         return (
-          <div key={idx} className="my-3 p-4 bg-gray-50 border border-gray-200 rounded-xl text-left">
-            {block.title && <div className="font-semibold text-sm text-gray-900 mb-1">{block.title}</div>}
-            <div className="text-xs text-gray-600 leading-relaxed">{block.content || block.text}</div>
+          <div key={idx} className="my-4 p-4 rounded-xl border border-gray-200 bg-gray-50/50 shadow-2xs text-left">
+            {block.title && <h3 className="font-bold text-sm text-gray-900 mb-1">{block.title}</h3>}
+            {block.text && <p className="text-xs text-gray-600 leading-relaxed mb-3">{block.text}</p>}
+            {Array.isArray(block.blocks) && block.blocks.map((b, bIdx) => renderBlock(b, `${idx}-${bIdx}`))}
           </div>
         );
 
       case 'divider':
         return <hr key={idx} className="my-4 border-gray-200" />;
 
-      case 'attachment-preview':
-        return (
-          <div key={idx} className="my-3 p-3 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-gray-500" />
-              <span className="text-xs font-medium text-gray-800">{block.name || 'document.pdf'}</span>
-            </div>
-            <button
-              onClick={() => emitEvent('attachment_interaction', { name: block.name })}
-              className="p-1 hover:bg-gray-200 rounded text-gray-600"
-              title="Preview attachment"
-            >
-              <Download className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        );
-
       default:
-        // Safely ignore unsupported block types without crashing
         return null;
     }
   };
 
   return (
-    <div className="flex flex-col h-screen w-full bg-[#e8eaed] text-[#202124] select-none overflow-hidden font-sans antialiased">
+    <div
+      className="flex flex-col h-full w-full bg-[#202124] text-white select-none overflow-hidden font-sans antialiased"
+      data-testid="website-simulation"
+    >
       {/* ============================================================== */}
-      {/* 1. BROWSER TABS BAR                                            */}
+      {/* 1. CHROME TITLE BAR & CURVED TABS STRIP (Screenshot 1)         */}
       {/* ============================================================== */}
-      <div className="h-10 bg-[#dee1e6] flex items-end px-3 pt-1.5 gap-1 select-none shrink-0 border-b border-gray-300">
-        <div className="flex items-center gap-2 px-3.5 py-1.5 bg-white rounded-t-lg text-xs font-medium text-gray-800 shadow-2xs max-w-xs truncate border-t border-x border-gray-300 relative group">
-          <Globe className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-          <span className="truncate">
-            {currentPage?.title || scenario.browserConfig?.siteTitle || 'Virtual Web Browser'}
-          </span>
-          <button className="p-0.5 rounded-full hover:bg-gray-200 text-gray-400 group-hover:text-gray-700 ml-1">
-            <X className="w-3 h-3" />
+      <div className="h-10 bg-[#292a2d] flex items-end justify-between px-2 pt-1.5 gap-1 shrink-0 select-none border-b border-[#3c4043]/50">
+        {/* Left: Active Tab & New Tab button */}
+        <div className="flex items-end gap-1 min-w-0">
+          <div className="flex items-center gap-2 px-3 py-2 bg-[#35363a] rounded-t-lg text-xs font-medium text-gray-100 max-w-xs truncate border-t border-x border-[#3c4043] relative shadow-md">
+            <Globe className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            <span className="truncate">
+              {currentPage?.title || scenario.browserConfig?.siteTitle || 'Virtual Web Browser'}
+            </span>
+            <button
+              onClick={handleChromeExit}
+              className="p-0.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white ml-1"
+              title="Close tab"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+
+          <button
+            className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white mb-0.5 transition-colors"
+            title="New Tab"
+          >
+            <Plus className="w-4 h-4" />
           </button>
         </div>
 
-        <button className="p-1.5 rounded-full hover:bg-gray-300 text-gray-600 mb-0.5" title="New Tab">
-          <Plus className="w-3.5 h-3.5" />
-        </button>
+        {/* Right: Ask Gemini Pill & Chrome Window Controls */}
+        <div className="flex items-center gap-3 pr-1 pb-1">
+          {/* Ask Gemini Button */}
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-[#1e1b4b] to-[#311042] border border-indigo-400/30 text-indigo-200 text-xs font-medium cursor-pointer shadow-sm hover:brightness-110 transition-all">
+            <Sparkles className="w-3.5 h-3.5 text-pink-400" />
+            <span className="text-[11px] font-semibold bg-gradient-to-r from-indigo-200 via-pink-200 to-amber-200 bg-clip-text text-transparent">
+              Ask Gemini
+            </span>
+          </div>
+
+          <div className="h-4 w-px bg-gray-600/60 mx-0.5" />
+
+          {/* Minimize, Maximize, Close */}
+          <div className="flex items-center gap-1 text-gray-400">
+            <button className="p-1 hover:bg-white/10 rounded" title="Minimize">
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            <button className="p-1 hover:bg-white/10 rounded" title="Maximize">
+              <Square className="w-3 h-3" />
+            </button>
+            <button
+              onClick={handleChromeExit}
+              className="p-1 hover:bg-red-600 hover:text-white rounded transition-colors"
+              title="Close"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ============================================================== */}
-      {/* 2. BROWSER TOOLBAR & ADDRESS BAR                               */}
+      {/* 2. CHROME OMNIBOX & NAVIGATION TOOLBAR (Screenshot 1)          */}
       {/* ============================================================== */}
-      <div className="h-12 bg-white px-3 flex items-center justify-between gap-2 border-b border-gray-200 shrink-0 shadow-2xs">
-        {/* Navigation buttons: Back, Forward, Refresh */}
+      <div className="h-11 bg-[#35363a] px-3 flex items-center justify-between gap-2 shrink-0 border-b border-[#292a2d]">
+        {/* Navigation buttons: Back, Forward, Reload */}
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={handleBrowserBack}
             disabled={historyIndex <= 0}
-            className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-30 text-gray-700 transition-colors"
+            className="p-1.5 rounded-full hover:bg-white/10 disabled:opacity-30 text-gray-300 transition-colors"
             title="Click to go back"
             aria-label="Back"
           >
@@ -539,7 +642,7 @@ export default function WebsiteSimulation({
           <button
             onClick={handleBrowserForward}
             disabled={historyIndex >= history.length - 1}
-            className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-30 text-gray-700 transition-colors"
+            className="p-1.5 rounded-full hover:bg-white/10 disabled:opacity-30 text-gray-300 transition-colors"
             title="Click to go forward"
             aria-label="Forward"
           >
@@ -548,7 +651,7 @@ export default function WebsiteSimulation({
 
           <button
             onClick={handleBrowserRefresh}
-            className="p-2 rounded-full hover:bg-gray-100 text-gray-700 transition-transform active:rotate-180"
+            className="p-1.5 rounded-full hover:bg-white/10 text-gray-300 transition-transform active:rotate-180"
             title="Reload this page"
             aria-label="Refresh"
           >
@@ -556,135 +659,334 @@ export default function WebsiteSimulation({
           </button>
         </div>
 
-        {/* Address Bar */}
-        <div className="flex-1 max-w-3xl relative">
-          <div className="flex items-center bg-[#f1f3f4] hover:bg-[#e8eaed] focus-within:bg-white focus-within:shadow-md focus-within:ring-1 focus-within:ring-blue-500 rounded-full px-3.5 py-1.5 transition-all text-xs sm:text-sm">
-            {/* Security Indicator */}
+        {/* Omnibox (Address Bar) with URL Highlighting & SSL Chip */}
+        <div className="flex-1 max-w-4xl relative">
+          <div className="flex items-center bg-[#202124] hover:bg-[#1b1c1e] focus-within:bg-[#1e1f22] focus-within:ring-2 focus-within:ring-blue-500 rounded-full px-3.5 py-1.5 transition-all text-xs font-mono">
+            {/* Security Chip: "Not secure" / Padlock */}
             <button
               onClick={() => setShowSecurityPopover(prev => !prev)}
-              className="flex items-center gap-1 mr-2 px-1 py-0.5 rounded hover:bg-black/5 shrink-0"
+              className="flex items-center gap-1.5 mr-2 px-1.5 py-0.5 rounded-full hover:bg-white/10 shrink-0 transition-colors"
               title="View site information"
             >
               {securityStatus === 'unsecured' ? (
-                <div className="flex items-center gap-1 text-red-600 font-semibold text-[11px]">
-                  <AlertOctagon className="w-3.5 h-3.5 text-red-600" />
-                  <span className="hidden sm:inline">Not Secure</span>
+                <div className="flex items-center gap-1 text-red-400 font-semibold text-[11px]">
+                  <AlertOctagon className="w-3.5 h-3.5 text-red-400" />
+                  <span className="hidden sm:inline">Not secure</span>
                 </div>
               ) : (
-                <Lock className="w-3.5 h-3.5 text-gray-500" />
+                <Lock className="w-3.5 h-3.5 text-gray-400" />
               )}
             </button>
 
-            {/* Virtual URL */}
-            <input
-              type="text"
-              readOnly
-              value={currentUrl}
-              className="w-full bg-transparent border-none outline-none text-xs sm:text-sm text-gray-800 font-mono truncate"
-            />
+            {/* URL Display with Host Highlighting */}
+            <div className="flex-1 truncate text-xs flex items-center">
+              <span className="text-white font-semibold">{hostPart}</span>
+              <span className="text-gray-400">{pathPart}</span>
+            </div>
+
+            {/* Right Omnibox Tools: Bookmark Star & Lens */}
+            <div className="flex items-center gap-2 text-gray-400 ml-2 shrink-0">
+              <button title="Bookmark this tab" className="hover:text-white">
+                <Star className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* Security Details Popover */}
           {showSecurityPopover && (
-            <div className="absolute top-10 left-2 z-40 w-80 p-4 bg-white rounded-xl shadow-2xl border border-gray-200 text-xs text-gray-700">
+            <div className="absolute top-10 left-2 z-50 w-80 p-4 bg-[#292a2d] rounded-xl shadow-2xl border border-[#3c4043] text-xs text-gray-300 animate-in fade-in zoom-in-95 duration-100">
               <div className="flex items-start justify-between mb-2">
-                <div className="flex items-center gap-2 font-bold text-gray-900">
-                  <ShieldAlert className="w-4 h-4 text-red-600" />
+                <div className="flex items-center gap-2 font-bold text-white">
+                  <ShieldAlert className="w-4 h-4 text-red-400" />
                   <span>Security Information</span>
                 </div>
-                <button onClick={() => setShowSecurityPopover(false)} className="p-0.5 rounded hover:bg-gray-100 text-gray-400">
+                <button
+                  onClick={() => setShowSecurityPopover(false)}
+                  className="p-0.5 rounded hover:bg-white/10 text-gray-400"
+                >
                   <X className="w-3 h-3" />
                 </button>
               </div>
 
-              <p className="text-gray-600 mb-2">
-                {scenario.browserConfig?.securityNotice || 'Your connection to this site is not private. Do not enter passwords or sensitive personal details.'}
+              <p className="text-gray-400 mb-2 leading-relaxed">
+                {scenario.browserConfig?.securityNotice ||
+                  'Your connection to this site is not private. Attackers might try to steal your passwords or credit cards.'}
               </p>
 
-              <div className="p-2 bg-red-50 text-red-900 rounded font-mono text-[10px] break-all">
-                Host Domain: {scenario.browserConfig?.defaultDomain || 'unverified-phishing-host'}
+              <div className="p-2 bg-red-950/60 border border-red-800 text-red-300 rounded font-mono text-[10px] break-all">
+                Untrusted Host: {scenario.browserConfig?.defaultDomain || 'unverified-phishing-host'}
               </div>
             </div>
           )}
         </div>
 
-        {/* Action Tools */}
-        <div className="flex items-center gap-1 shrink-0">
-          {/* Report Threat Action */}
-          <button
-            onClick={() => setIsReportModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold border border-red-200 transition-colors shadow-2xs mr-1"
-            title="Report phishing website"
-          >
-            <ShieldAlert className="w-4 h-4 text-red-600" />
-            <span className="hidden sm:inline">Report Threat</span>
+        {/* Right Tools: Extension puzzle, Shield, Profile Avatar, 3-Dot Menu */}
+        <div className="flex items-center gap-1 shrink-0 relative" ref={chromeMenuRef}>
+          <button title="Extensions" className="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10">
+            <Puzzle className="w-4 h-4" />
           </button>
 
-          {/* Safe Exit Simulation */}
-          <button
-            onClick={() => setIsSafeExitModalOpen(true)}
-            className="p-2 rounded-full hover:bg-gray-100 text-gray-600 transition-colors"
-            title="Safe Exit"
-            aria-label="Safe Exit"
-          >
-            <LogOut className="w-4 h-4" />
+          <button title="Adblocker / Security Shield" className="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10">
+            <Shield className="w-4 h-4 text-red-400" />
           </button>
+
+          {/* Profile Avatar */}
+          <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-sm cursor-pointer ml-0.5">
+            P
+          </div>
+
+          {/* 3-Dot Chrome Menu Button (Screenshot 1) */}
+          <button
+            onClick={() => {
+              setIsChromeMenuOpen(prev => !prev);
+              setIsHelpSubmenuOpen(false);
+            }}
+            data-testid="chrome-menu-btn"
+            className={`p-1.5 rounded-full transition-colors ${
+              isChromeMenuOpen ? 'bg-white/20 text-white' : 'text-gray-400 hover:text-white hover:bg-white/10'
+            }`}
+            title="Customize and control Google Chrome"
+            aria-label="Chrome options"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+
+          {/* ============================================================== */}
+          {/* CHROME 3-DOT POPUP MENU (Screenshot 1)                        */}
+          {/* ============================================================== */}
+          {isChromeMenuOpen && (
+            <div
+              data-testid="chrome-dropdown-menu"
+              className="absolute right-0 top-10 w-72 bg-[#292a2d] border border-[#3c4043] rounded-xl shadow-2xl py-1.5 z-50 text-xs text-gray-200 select-none animate-in fade-in zoom-in-95 duration-100"
+            >
+              {/* Security compromised passwords badge */}
+              <div className="px-3.5 py-2 flex items-center gap-3 hover:bg-white/5 cursor-pointer text-gray-200">
+                <ShieldAlert className="w-4 h-4 text-red-400 shrink-0" />
+                <span className="font-medium">Found 3 compromised passwords</span>
+              </div>
+
+              <div className="h-px bg-[#3c4043] my-1" />
+
+              <div className="px-3.5 py-1.5 flex items-center justify-between hover:bg-white/5 cursor-pointer text-gray-300">
+                <span>New tab</span>
+                <span className="text-[10px] text-gray-500">Ctrl+T</span>
+              </div>
+              <div className="px-3.5 py-1.5 flex items-center justify-between hover:bg-white/5 cursor-pointer text-gray-300">
+                <span>New window</span>
+                <span className="text-[10px] text-gray-500">Ctrl+N</span>
+              </div>
+              <div className="px-3.5 py-1.5 flex items-center justify-between hover:bg-white/5 cursor-pointer text-gray-300">
+                <span>New Incognito window</span>
+                <span className="text-[10px] text-gray-500">Ctrl+Shift+N</span>
+              </div>
+
+              <div className="h-px bg-[#3c4043] my-1" />
+
+              {/* Profile Card */}
+              <div className="mx-2 p-2 rounded-lg bg-[#35363a] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-[10px] flex items-center justify-center">
+                    P
+                  </div>
+                  <span className="font-semibold text-white">Pavan</span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-950 text-red-400 border border-red-800">
+                  Signed in
+                </span>
+              </div>
+
+              <div className="px-3.5 py-1.5 flex items-center justify-between hover:bg-white/5 cursor-pointer text-gray-300 mt-1">
+                <span>Passwords and autofill</span>
+                <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+              </div>
+              <div className="px-3.5 py-1.5 flex items-center justify-between hover:bg-white/5 cursor-pointer text-gray-300">
+                <span>History</span>
+                <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+              </div>
+              <div className="px-3.5 py-1.5 flex items-center justify-between hover:bg-white/5 cursor-pointer text-gray-300">
+                <span>Downloads</span>
+                <span className="text-[10px] text-gray-500">Ctrl+J</span>
+              </div>
+              <div className="px-3.5 py-1.5 flex items-center justify-between hover:bg-white/5 cursor-pointer text-gray-300">
+                <span>Bookmarks and lists</span>
+                <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+              </div>
+              <div className="px-3.5 py-1.5 flex items-center justify-between hover:bg-white/5 cursor-pointer text-gray-300">
+                <span>Extensions</span>
+                <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+              </div>
+
+              <div className="h-px bg-[#3c4043] my-1" />
+
+              {/* Zoom controls */}
+              <div className="px-3.5 py-1.5 flex items-center justify-between text-gray-300">
+                <span>Zoom</span>
+                <div className="flex items-center gap-2 font-mono">
+                  <button className="px-1.5 rounded hover:bg-white/10">-</button>
+                  <span className="text-[11px]">100%</span>
+                  <button className="px-1.5 rounded hover:bg-white/10">+</button>
+                </div>
+              </div>
+
+              <div className="h-px bg-[#3c4043] my-1" />
+
+              {/* HELP MENU TRIGGER (Hover / Click expands Submenu) */}
+              <div className="relative">
+                <button
+                  onClick={() => setIsHelpSubmenuOpen(prev => !prev)}
+                  onMouseEnter={() => setIsHelpSubmenuOpen(true)}
+                  data-testid="chrome-help-menu-btn"
+                  className="w-full px-3.5 py-1.5 flex items-center justify-between hover:bg-white/10 cursor-pointer text-gray-200 text-left transition-colors"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <HelpCircle className="w-4 h-4 text-gray-400" />
+                    <span>Help</span>
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+                </button>
+
+                {/* HELP FLYOUT SUBMENU (Screenshot 1) */}
+                {isHelpSubmenuOpen && (
+                  <div
+                    data-testid="chrome-help-submenu"
+                    className="absolute right-full top-0 mr-1 w-60 bg-[#292a2d] border border-[#3c4043] rounded-xl shadow-2xl py-1.5 text-xs text-gray-200 z-50 animate-in fade-in duration-100"
+                  >
+                    <div className="px-3.5 py-1.5 hover:bg-white/5 cursor-pointer text-gray-300">
+                      About Google Chrome
+                    </div>
+                    <div className="px-3.5 py-1.5 hover:bg-white/5 cursor-pointer text-gray-300">
+                      What's new
+                    </div>
+                    <div className="px-3.5 py-1.5 hover:bg-white/5 cursor-pointer text-gray-300">
+                      Help center
+                    </div>
+
+                    <div className="h-px bg-[#3c4043] my-1" />
+
+                    {/* REPORT AN ISSUE... (Opens Feedback Modal Screenshot 2) */}
+                    <button
+                      onClick={() => {
+                        setIsChromeMenuOpen(false);
+                        setIsHelpSubmenuOpen(false);
+                        setIsFeedbackModalOpen(true);
+                      }}
+                      data-testid="chrome-report-issue-btn"
+                      className="w-full px-3.5 py-1.5 flex items-center justify-between hover:bg-white/10 cursor-pointer text-gray-200 text-left transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <MessageSquare className="w-3.5 h-3.5 text-gray-400" />
+                        <span>Report an issue...</span>
+                      </div>
+                      <span className="text-[10px] text-gray-500 font-mono">Alt+Shift+I</span>
+                    </button>
+
+                    {/* REPORT AN UNSAFE SITE... (Opens Feedback Modal Screenshot 2) */}
+                    <button
+                      onClick={() => {
+                        setIsChromeMenuOpen(false);
+                        setIsHelpSubmenuOpen(false);
+                        setIsFeedbackModalOpen(true);
+                      }}
+                      data-testid="chrome-report-unsafe-btn"
+                      className="w-full px-3.5 py-1.5 flex items-center gap-2.5 hover:bg-white/10 cursor-pointer text-red-400 text-left transition-colors"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Report an unsafe site...</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="px-3.5 py-1.5 flex items-center gap-2.5 hover:bg-white/5 cursor-pointer text-gray-300">
+                <Settings className="w-4 h-4 text-gray-400" />
+                <span>Settings</span>
+              </div>
+
+              <div className="h-px bg-[#3c4043] my-1" />
+
+              {/* Exit Chrome */}
+              <button
+                onClick={handleChromeExit}
+                data-testid="chrome-exit-btn"
+                className="w-full px-3.5 py-1.5 flex items-center gap-2.5 hover:bg-white/10 cursor-pointer text-gray-300 text-left"
+              >
+                <span>Exit</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* ============================================================== */}
-      {/* 3. BROWSER VIEWPORT & VIRTUAL PAGE CONTENT                     */}
+      {/* 3. CHROME BOOKMARKS BAR (Screenshot 1)                         */}
       {/* ============================================================== */}
-      <div className="flex-1 bg-white overflow-y-auto relative flex flex-col">
-        {/* Threat Reported Confirmation Banner */}
-        {threatReportedConfirmed && (
-          <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2.5 flex items-center justify-between text-xs sm:text-sm text-emerald-900 shrink-0">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="font-medium">
-                Threat Reported: Fake website report submitted. Telemetry logged in simulation runner.
-              </span>
-            </div>
-            <button
-              onClick={() => setThreatReportedConfirmed(false)}
-              className="text-emerald-700 hover:text-emerald-950 p-1 rounded"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
+      <div className="h-7 bg-[#292a2d] px-3 flex items-center gap-3 border-b border-[#3c4043] text-[11px] text-gray-300 select-none shrink-0 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1.5 cursor-pointer hover:bg-white/10 px-2 py-0.5 rounded">
+          <Folder className="w-3.5 h-3.5 text-blue-400" />
+          <span>All bookmarks</span>
+        </div>
 
-        {/* In-app Link Notice Banner */}
+        <div className="h-3 w-px bg-gray-600/60" />
+
+        <div className="flex items-center gap-1.5 cursor-pointer hover:bg-white/10 px-2 py-0.5 rounded">
+          <div className="w-3 h-3 rounded-full bg-blue-600 text-[8px] font-bold text-white flex items-center justify-center">
+            V
+          </div>
+          <span>VTOP</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 cursor-pointer hover:bg-white/10 px-2 py-0.5 rounded">
+          <div className="w-3 h-3 rounded-full bg-red-600 text-[8px] font-bold text-white flex items-center justify-center">
+            M
+          </div>
+          <span>Gmail</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 cursor-pointer hover:bg-white/10 px-2 py-0.5 rounded">
+          <div className="w-3 h-3 rounded-full bg-blue-500 text-[8px] font-bold text-white flex items-center justify-center">
+            G
+          </div>
+          <span>Google</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 cursor-pointer hover:bg-white/10 px-2 py-0.5 rounded">
+          <div className="w-3 h-3 rounded-full bg-red-700 text-[8px] font-bold text-white flex items-center justify-center">
+            ▶
+          </div>
+          <span>YouTube</span>
+        </div>
+      </div>
+
+      {/* ============================================================== */}
+      {/* 4. CHROME BROWSER VIEWPORT & WEBPAGE CONTENT                  */}
+      {/* ============================================================== */}
+      <div className="flex-1 bg-[#f8f9fa] text-gray-900 overflow-y-auto relative flex flex-col items-center">
+        {/* Intercept Notice Banner */}
         {linkNotice && (
-          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between text-xs sm:text-sm text-amber-900 shrink-0">
-            <div className="flex items-center gap-2 overflow-hidden">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span className="truncate">
-                <strong>Simulated Link Intercepted:</strong> External navigation prevented. Action recorded safely.
-              </span>
+          <div className="w-full bg-blue-50 border-b border-blue-200 px-4 py-2 flex items-center justify-between text-xs text-blue-900 shrink-0">
+            <div className="flex items-center gap-2">
+              <Info className="w-4 h-4 text-blue-600 shrink-0" />
+              <span>{linkNotice.text} ({linkNotice.url})</span>
             </div>
-            <button
-              onClick={() => setLinkNotice(null)}
-              className="text-amber-700 hover:text-amber-950 p-1 rounded shrink-0 ml-2"
-            >
+            <button onClick={() => setLinkNotice(null)} className="text-blue-500 hover:text-blue-800">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
 
-        {/* Virtual Page Body */}
-        <main className="flex-1 p-6 md:p-12 flex flex-col items-center">
+        {/* Page Content Rendering */}
+        <div className="w-full flex-1 flex flex-col items-center justify-center p-4 sm:p-8">
           {!currentPage ? (
-            /* 404 / Unknown Page Handler */
-            <div className="max-w-md w-full text-center py-12 p-6 bg-gray-50 border border-gray-200 rounded-2xl shadow-sm">
-              <AlertOctagon className="w-12 h-12 text-red-500 mx-auto mb-3" />
-              <h2 className="text-xl font-bold text-gray-900 mb-2">404 - Page Not Found</h2>
-              <p className="text-xs sm:text-sm text-gray-600 mb-5 leading-relaxed">
-                The virtual web page <code className="bg-gray-200 px-1 py-0.5 rounded text-xs">{currentPageId}</code> does not exist in this simulation scenario.
+            /* 404 Fallback State */
+            <div className="text-center p-8 bg-white border border-gray-200 rounded-2xl shadow-sm max-w-md w-full">
+              <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+              <h2 className="text-xl font-bold text-gray-900 mb-1">404 - Page Not Found</h2>
+              <p className="text-xs text-gray-600 mb-4">
+                The virtual browser was unable to locate page <code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-red-600">"{currentPageId}"</code>.
               </p>
               <button
-                onClick={() => handleNavigate(initialPageId, { trigger: 'return_home' })}
-                className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs"
+                onClick={() => handleNavigate(initialPageId)}
+                className="px-4 py-2 bg-blue-600 text-white font-semibold text-xs rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Return to Initial Page
               </button>
@@ -694,22 +996,21 @@ export default function WebsiteSimulation({
             <div
               className={`w-full transition-all ${
                 currentPage.layout === 'login-style' || currentPage.layout === 'account-verification'
-                  ? 'max-w-md bg-white border border-gray-200 p-6 sm:p-8 rounded-2xl shadow-sm text-center'
+                  ? 'max-w-md bg-white border border-gray-200/80 p-6 sm:p-8 rounded-2xl shadow-lg text-center'
                   : currentPage.layout === 'confirmation'
-                  ? 'max-w-lg bg-white border border-gray-200 p-8 rounded-2xl shadow-sm text-center'
-                  : 'max-w-3xl'
+                  ? 'max-w-lg bg-white border border-gray-200/80 p-8 rounded-2xl shadow-lg text-center'
+                  : 'max-w-3xl bg-white border border-gray-200/80 p-6 rounded-2xl shadow-sm'
               }`}
             >
               {/* Optional Portal Header / Logo for login-style layout */}
               {(currentPage.layout === 'login-style' || currentPage.layout === 'account-verification') && (
                 <div className="flex items-center justify-center gap-2 mb-4 pb-4 border-b border-gray-100">
-                  <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-base shadow-xs">
-                    V
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-600 text-white flex items-center justify-center font-bold text-base shadow-sm">
+                    {scenario.browserConfig?.siteTitle?.charAt(0) || 'V'}
                   </div>
-                  <div className="text-left">
-                    <div className="font-bold text-sm text-gray-900 leading-tight">V-TOP PORTAL</div>
-                    <div className="text-[10px] text-gray-500 font-mono">Single Sign-On SSO</div>
-                  </div>
+                  <span className="font-bold text-base text-gray-900 tracking-tight">
+                    {scenario.browserConfig?.siteTitle || 'Single Sign-On Authentication'}
+                  </span>
                 </div>
               )}
 
@@ -717,201 +1018,157 @@ export default function WebsiteSimulation({
               {Array.isArray(currentPage.blocks) && currentPage.blocks.map((block, idx) => renderBlock(block, idx))}
             </div>
           )}
-        </main>
+        </div>
       </div>
 
       {/* ============================================================== */}
-      {/* 4. THREAT REPORTING MODAL                                      */}
+      {/* 5. "SEND FEEDBACK TO GOOGLE" MODAL (Screenshot 2)              */}
       {/* ============================================================== */}
-      {isReportModalOpen && (
+      {isFeedbackModalOpen && (
         <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
+          data-testid="chrome-feedback-modal"
+          className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-150"
         >
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-200">
-            {/* Header */}
-            <div className="px-6 py-4 bg-red-50/70 border-b border-red-100 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-red-100 text-red-600 flex items-center justify-center shrink-0">
-                  <ShieldAlert className="w-5 h-5" />
+          <div className="bg-[#202124] border border-[#3c4043] rounded-2xl max-w-lg w-full text-gray-200 shadow-2xl overflow-hidden font-sans">
+            {/* Modal Window Header with Chrome Icon */}
+            <div className="px-4 py-3 bg-[#292a2d] border-b border-[#3c4043] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-red-500 via-yellow-400 to-green-500 flex items-center justify-center p-0.5 shadow-sm">
+                  <div className="w-full h-full rounded-full bg-[#292a2d] flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-blue-500" />
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-gray-900">
-                    Report Phishing Website
-                  </h3>
-                  <p className="text-xs text-gray-600">
-                    Identify suspicious indicators detected on this virtual website
+                <h3 className="text-sm font-semibold text-white tracking-tight">
+                  Send feedback to Google
+                </h3>
+              </div>
+              <div className="flex items-center gap-1 text-gray-400">
+                <button className="p-1 hover:bg-white/10 rounded">
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <button className="p-1 hover:bg-white/10 rounded">
+                  <Square className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => setIsFeedbackModalOpen(false)}
+                  className="p-1 hover:bg-red-600 hover:text-white rounded transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block text-xs font-medium text-gray-200 mb-1.5">
+                  Describe the issue in detail
+                </label>
+                <textarea
+                  rows={4}
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  placeholder="Describe why this website is suspicious, deceptive, or attempting to harvest user credentials..."
+                  className="w-full bg-[#18191c] border border-blue-500 rounded-lg p-3 text-xs text-white placeholder-gray-500 outline-none focus:ring-1 focus:ring-blue-400 resize-none font-sans"
+                />
+              </div>
+
+              <div>
+                <p className="text-gray-400 text-[11px] font-semibold mb-2">Additional info (optional)</p>
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-3">
+                    <span className="w-16 text-gray-400 shrink-0 text-left">URL</span>
+                    <input
+                      type="text"
+                      readOnly
+                      value={currentUrl}
+                      className="flex-1 bg-[#18191c] border border-[#3c4043] rounded px-2.5 py-1.5 text-xs text-gray-300 font-mono truncate"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="w-16 text-gray-400 shrink-0 text-left">Email</span>
+                    <select
+                      value={feedbackEmail}
+                      onChange={(e) => setFeedbackEmail(e.target.value)}
+                      className="flex-1 bg-[#18191c] border border-[#3c4043] rounded px-2.5 py-1.5 text-xs text-gray-200 outline-none"
+                    >
+                      <option value="pavankalyan7127@gmail.com">pavankalyan7127@gmail.com</option>
+                      <option value="student@university.edu">student@university.edu</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="w-16 text-gray-400 shrink-0 text-left">Attach file</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="px-2.5 py-1 bg-[#35363a] hover:bg-[#404247] text-gray-200 text-xs rounded border border-[#484b51] transition-colors"
+                      >
+                        Choose File
+                      </button>
+                      <span className="text-gray-500 text-[11px]">No file chosen</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-gray-500 pl-19">
+                    File will be sent to Google for debugging
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setIsReportModalOpen(false)}
-                className="p-1 rounded-full hover:bg-red-100 text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Indicator Checklist */}
-            <div className="p-6 space-y-3.5">
-              <p className="text-xs text-gray-600 leading-normal">
-                Select the suspicious signals you observed on this webpage:
+              <div className="space-y-2 pt-1">
+                <label className="flex items-center gap-2 cursor-pointer text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={emailForUpdates}
+                    onChange={(e) => setEmailForUpdates(e.target.checked)}
+                    className="rounded border-gray-600 bg-[#292a2d] text-blue-500 focus:ring-0"
+                  />
+                  <span>We may email you for more information or updates</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={includeScreenshot}
+                    onChange={(e) => setIncludeScreenshot(e.target.checked)}
+                    className="rounded border-gray-600 bg-[#292a2d] text-blue-500 focus:ring-0"
+                  />
+                  <span>Include this screenshot and titles of open tabs</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={sendSysInfo}
+                    onChange={(e) => setSendSysInfo(e.target.checked)}
+                    className="rounded border-gray-600 bg-[#292a2d] text-blue-500 focus:ring-0"
+                  />
+                  <span>Send system information</span>
+                </label>
+              </div>
+
+              <p className="text-[10px] text-gray-500 leading-relaxed pt-1">
+                Go to the <span className="text-blue-400 underline cursor-pointer">Legal Help page</span> to request content changes for legal reasons. Some account and system information may be sent to Google. We will use the information you give us to help address technical issues and to improve our services, subject to our <span className="text-blue-400 underline cursor-pointer">Privacy Policy</span> and <span className="text-blue-400 underline cursor-pointer">Terms of Service</span>.
               </p>
-
-              <div className="space-y-2 text-xs text-gray-800">
-                <label className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-100">
-                  <input
-                    type="checkbox"
-                    checked={reportIndicators.lookalikeDomain}
-                    onChange={() => handleToggleIndicator('lookalikeDomain')}
-                    className="mt-0.5 rounded text-red-600 focus:ring-0 cursor-pointer"
-                  />
-                  <div>
-                    <span className="font-semibold text-gray-900 block">
-                      Lookalike / Typosquatting Domain
-                    </span>
-                    <span className="text-gray-500 text-[11px]">
-                      URL domain differs from official root (e.g. <code>secure-verify-student.info</code> vs <code>vit.ac.in</code>)
-                    </span>
-                  </div>
-                </label>
-
-                <label className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-100">
-                  <input
-                    type="checkbox"
-                    checked={reportIndicators.untrustedCertificate}
-                    onChange={() => handleToggleIndicator('untrustedCertificate')}
-                    className="mt-0.5 rounded text-red-600 focus:ring-0 cursor-pointer"
-                  />
-                  <div>
-                    <span className="font-semibold text-gray-900 block">
-                      Browser Security Warning / Untrusted Host
-                    </span>
-                    <span className="text-gray-500 text-[11px]">
-                      Security indicator marks connection as unverified or not secure
-                    </span>
-                  </div>
-                </label>
-
-                <label className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-100">
-                  <input
-                    type="checkbox"
-                    checked={reportIndicators.credentialHarvestingFields}
-                    onChange={() => handleToggleIndicator('credentialHarvestingFields')}
-                    className="mt-0.5 rounded text-red-600 focus:ring-0 cursor-pointer"
-                  />
-                  <div>
-                    <span className="font-semibold text-gray-900 block">
-                      Credential / OTP Harvesting Form
-                    </span>
-                    <span className="text-gray-500 text-[11px]">
-                      Webpage solicits password or two-factor code unexpectedly
-                    </span>
-                  </div>
-                </label>
-
-                <label className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-100">
-                  <input
-                    type="checkbox"
-                    checked={reportIndicators.artificialUrgencyNotice}
-                    onChange={() => handleToggleIndicator('artificialUrgencyNotice')}
-                    className="mt-0.5 rounded text-red-600 focus:ring-0 cursor-pointer"
-                  />
-                  <div>
-                    <span className="font-semibold text-gray-900 block">
-                      Artificial Urgency / Account Suspension Threat
-                    </span>
-                    <span className="text-gray-500 text-[11px]">
-                      Threatens immediate account lock to induce panic
-                    </span>
-                  </div>
-                </label>
-
-                <label className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-100">
-                  <input
-                    type="checkbox"
-                    checked={reportIndicators.portalImpersonation}
-                    onChange={() => handleToggleIndicator('portalImpersonation')}
-                    className="mt-0.5 rounded text-red-600 focus:ring-0 cursor-pointer"
-                  />
-                  <div>
-                    <span className="font-semibold text-gray-900 block">
-                      Visual Identity Impersonation
-                    </span>
-                    <span className="text-gray-500 text-[11px]">
-                      Copies university / institutional logos and branding
-                    </span>
-                  </div>
-                </label>
-              </div>
-
-              {/* Optional Notes */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Investigation Notes (Optional)
-                </label>
-                <textarea
-                  rows={2}
-                  value={reportNotes}
-                  onChange={(e) => setReportNotes(e.target.value)}
-                  placeholder="Additional context about this phishing site..."
-                  className="w-full text-xs p-2.5 border border-gray-200 rounded-lg outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 resize-none"
-                />
-              </div>
             </div>
 
-            {/* Actions */}
-            <div className="px-6 py-3.5 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-2.5">
+            {/* Modal Actions */}
+            <div className="px-6 py-3.5 bg-[#1b1c1e] border-t border-[#3c4043] flex items-center justify-end gap-3">
               <button
-                onClick={() => setIsReportModalOpen(false)}
-                className="px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-200/60 rounded-lg transition-colors"
+                type="button"
+                onClick={() => setIsFeedbackModalOpen(false)}
+                className="px-4 py-1.5 text-xs font-semibold text-gray-300 hover:bg-white/10 rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={handleConfirmThreatReport}
-                className="px-5 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
+                type="button"
+                onClick={handleSendFeedback}
+                data-testid="chrome-feedback-send-btn"
+                className="px-5 py-1.5 text-xs font-bold text-gray-900 bg-[#8ab4f8] hover:bg-[#aecbfa] rounded-lg shadow-sm transition-colors cursor-pointer"
               >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Confirm & Report Threat</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* 5. SAFE EXIT MODAL                                             */}
-      {/* ============================================================== */}
-      {isSafeExitModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
-        >
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-gray-200 text-center">
-            <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mx-auto mb-3">
-              <LogOut className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-bold text-gray-900 mb-1.5">
-              Exit Website Simulation?
-            </h3>
-            <p className="text-xs text-gray-600 mb-5 leading-relaxed">
-              You are terminating this virtual browser simulation. Your interaction telemetry will be finalized.
-            </p>
-            <div className="flex items-center justify-center gap-2.5">
-              <button
-                onClick={() => setIsSafeExitModalOpen(false)}
-                className="px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                Continue Browsing
-              </button>
-              <button
-                onClick={handleConfirmSafeExit}
-                className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors"
-              >
-                Confirm Safe Exit
+                Send
               </button>
             </div>
           </div>

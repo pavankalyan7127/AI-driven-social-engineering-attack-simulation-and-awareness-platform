@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { generateScenarioWithGroq } from '../services/groqService.js';
+import { generateScenarioWithGroq, generateCallAttackerResponse } from '../services/groqService.js';
 
 const router = express.Router();
 
@@ -81,7 +81,7 @@ router.post('/generate', (req, res, next) => {
     }
 
     // 2. Validate channel (Optional: if omitted, AI automatically predicts channel)
-    const ALLOWED_CHANNELS = ['email', 'chat', 'sms', 'website'];
+    const ALLOWED_CHANNELS = ['email', 'chat', 'sms', 'website', 'whatsapp', 'instagram', 'telegram'];
     let normalizedChannel = null;
 
     if (channel !== undefined && channel !== null && String(channel).trim().length > 0) {
@@ -130,6 +130,46 @@ router.post('/generate', (req, res, next) => {
       success: false,
       error: clientErrorMessage,
       validationErrors: err.validationErrors || undefined
+    });
+  }
+});
+
+/**
+ * POST /api/scenarios/call/respond
+ * Dynamically analyzes user speech and generates real-time attacker dialogue
+ * for active phone call simulations, checking for sensitive credential disclosure.
+ */
+router.post('/call/respond', async (req, res) => {
+  try {
+    const { userSpeech, dialogueHistory, callerName, personaContext, targetInformation } = req.body;
+
+    if (!userSpeech || typeof userSpeech !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid "userSpeech" in request body.'
+      });
+    }
+
+    const result = await generateCallAttackerResponse({
+      userSpeech,
+      dialogueHistory: Array.isArray(dialogueHistory) ? dialogueHistory : [],
+      callerName: callerName || 'Fraud Investigation Agent',
+      personaContext: personaContext || 'Authoritative fraud investigator demanding immediate verification.',
+      targetInformation: targetInformation || 'credit card number, CVV, or PIN'
+    });
+
+    return res.status(200).json({
+      success: true,
+      attackerSpeech: result.attackerSpeech,
+      sensitiveInfoDisclosed: result.sensitiveInfoDisclosed,
+      explanation: result.explanation
+    });
+  } catch (err) {
+    console.error('[Call Respond Route Error]:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to analyze user speech.',
+      attackerSpeech: 'Sir, I need you to confirm your card details now or your account will be frozen.'
     });
   }
 });

@@ -11,7 +11,7 @@ import {
   generateDefaultTerminationRules
 } from './terminationRulesValidator.js';
 
-export const ALLOWED_CHANNELS = ['email', 'chat', 'sms', 'website'];
+export const ALLOWED_CHANNELS = ['email', 'chat', 'sms', 'website', 'whatsapp', 'instagram', 'telegram', 'call'];
 
 export const ALLOWED_WEBSITE_LAYOUTS = [
   'login-style',
@@ -61,11 +61,16 @@ export function validateScenario(scenario, expectedChannel) {
     return { valid: false, errors: ['Scenario must be a valid JSON object'] };
   }
 
-  // 1. Channel check
-  const channel = (scenario.channel || '').toLowerCase().trim();
+  // 1. Channel check & normalization
+  let channel = (scenario.channel || '').toLowerCase().trim();
+  if (channel === 'voice_call' || channel === 'phone_call' || channel === 'vishing') {
+    channel = 'call';
+    scenario.channel = 'call';
+  }
+
   if (!channel || !ALLOWED_CHANNELS.includes(channel)) {
     errors.push(`Invalid or missing channel "${scenario.channel}". Allowed: ${ALLOWED_CHANNELS.join(', ')}`);
-  } else if (expectedChannel && channel !== expectedChannel.toLowerCase().trim()) {
+  } else if (expectedChannel && channel !== expectedChannel.toLowerCase().trim() && !(expectedChannel.toLowerCase().trim() === 'call' && ['voice_call', 'phone_call', 'vishing'].includes(channel))) {
     errors.push(`Scenario channel "${channel}" does not match requested channel "${expectedChannel}"`);
   }
 
@@ -97,9 +102,11 @@ export function validateScenario(scenario, expectedChannel) {
     }
   } else {
     const defaultPrimary =
-      channel === 'sms'
+      channel === 'call'
+        ? 'vishing'
+        : channel === 'sms'
         ? 'smishing'
-        : channel === 'chat'
+        : ['chat', 'whatsapp', 'instagram', 'telegram'].includes(channel)
         ? 'pretexting'
         : channel === 'website'
         ? 'credential_phishing'
@@ -114,12 +121,14 @@ export function validateScenario(scenario, expectedChannel) {
   // 4. Channel-specific structural validation
   if (channel === 'email') {
     validateEmailScenario(scenario, errors);
-  } else if (channel === 'chat') {
+  } else if (['chat', 'whatsapp', 'instagram', 'telegram'].includes(channel)) {
     validateChatScenario(scenario, errors);
   } else if (channel === 'sms') {
     validateSmsScenario(scenario, errors);
   } else if (channel === 'website') {
     validateWebsiteScenario(scenario, errors);
+  } else if (channel === 'call') {
+    validateCallScenario(scenario, errors);
   }
 
   // 5. Termination Rules Validation (runs after channel-specific validation so scenario blocks are checked)
@@ -412,5 +421,44 @@ function validateWebsiteScenario(scenario, errors) {
         }
       }
     }
+  }
+}
+
+function validateCallScenario(scenario, errors) {
+  if (!scenario.callData || typeof scenario.callData !== 'object') {
+    errors.push('Call scenario must contain a "callData" object representing the incoming voice call');
+    return;
+  }
+
+  const call = scenario.callData;
+  if (!call.id) call.id = 'call-target-1';
+  if (!scenario.targetId) scenario.targetId = call.id;
+
+  if (!call.callerName || typeof call.callerName !== 'string') {
+    call.callerName = scenario.title || 'Unknown Caller';
+  }
+
+  if (!call.callerNumber || typeof call.callerNumber !== 'string') {
+    call.callerNumber = '+1 (800) 555-0199';
+  }
+
+  if (!call.openingLine || typeof call.openingLine !== 'string' || !call.openingLine.trim()) {
+    errors.push('callData must contain an "openingLine" string for the initial spoken script');
+  }
+
+  if (!call.personaContext || typeof call.personaContext !== 'string') {
+    call.personaContext = 'Authoritative security investigator pressing for quick identity or credential confirmation.';
+  }
+
+  if (!call.targetInformation || typeof call.targetInformation !== 'string') {
+    call.targetInformation = 'credit card number, security CVV, or PIN';
+  }
+
+  if (!Array.isArray(call.fallbackResponses) || call.fallbackResponses.length === 0) {
+    call.fallbackResponses = [
+      'This is an urgent matter regarding your account security. Please verify the requested information.',
+      'We cannot proceed to protect your funds until you provide the necessary security verification.',
+      'Sir, this call is recorded. For your protection, state the required numbers.'
+    ];
   }
 }

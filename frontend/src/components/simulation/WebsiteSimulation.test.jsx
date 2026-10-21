@@ -20,7 +20,7 @@ describe('WebsiteSimulation Component', () => {
     expect(screen.getByTitle('Click to go back')).toBeInTheDocument();
     expect(screen.getByTitle('Click to go forward')).toBeInTheDocument();
     expect(screen.getByTitle('Reload this page')).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/vtop-auth-portal\.secure-verify-student\.info/i)).toBeInTheDocument();
+    expect(screen.getByText(/vtop-auth-portal\.secure-verify-student\.info/i)).toBeInTheDocument();
 
     // Verify scenario_viewed event emitted
     expect(handleAction).toHaveBeenCalledWith(
@@ -263,8 +263,8 @@ describe('WebsiteSimulation Component', () => {
     expect(viewedCalls.length).toBe(1);
   });
 
-  // 10. Threat reporting and safe-exit flows
-  it('handles threat reporting flow with warning sign selection', () => {
+  // 10. Threat reporting flow via Chrome Help menu and feedback dialog
+  it('handles threat reporting flow with Chrome Help menu and feedback modal', () => {
     const handleAction = vi.fn();
     const handleComplete = vi.fn();
 
@@ -277,35 +277,36 @@ describe('WebsiteSimulation Component', () => {
       />
     );
 
-    // Click Report Threat button
-    const reportBtn = screen.getByText('Report Threat');
+    // Open Chrome 3-dot menu
+    const menuBtn = screen.getByTestId('chrome-menu-btn');
+    fireEvent.click(menuBtn);
+
+    // Click Help submenu trigger
+    const helpBtn = screen.getByTestId('chrome-help-menu-btn');
+    fireEvent.click(helpBtn);
+
+    // Click "Report an unsafe site..."
+    const reportBtn = screen.getByTestId('chrome-report-unsafe-btn');
     fireEvent.click(reportBtn);
 
-    expect(screen.getByText('Report Phishing Website')).toBeInTheDocument();
+    // Feedback modal is now open
+    expect(screen.getByText('Send feedback to Google')).toBeInTheDocument();
+    expect(screen.getByText('Describe the issue in detail')).toBeInTheDocument();
 
-    // Select indicator
-    const checkbox = screen.getByLabelText(/Lookalike \/ Typosquatting Domain/i);
-    fireEvent.click(checkbox);
+    // Type description
+    const textarea = screen.getByPlaceholderText(/Describe why this website is suspicious/i);
+    fireEvent.change(textarea, { target: { value: 'This website is phishing university credentials!' } });
 
-    expect(handleAction).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: 'warning_sign_selected',
-        metadata: expect.objectContaining({
-          indicatorKey: 'lookalikeDomain',
-          selected: true,
-        }),
-      })
-    );
-
-    // Confirm report
-    const confirmBtn = screen.getByText('Confirm & Report Threat');
-    fireEvent.click(confirmBtn);
+    // Confirm & submit feedback
+    const sendBtn = screen.getByTestId('chrome-feedback-send-btn');
+    fireEvent.click(sendBtn);
 
     // Verify threat_reported event
     expect(handleAction).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'threat_reported',
         metadata: expect.objectContaining({
+          reportedVia: 'chrome_feedback',
           reportedTarget: true,
         }),
       })
@@ -321,8 +322,8 @@ describe('WebsiteSimulation Component', () => {
     );
   });
 
-  // 11. Terminal callback behavior
-  it('handles safe-exit flow and invokes onComplete', () => {
+  // 11. Chrome Exit flow invokes onComplete
+  it('handles safe-exit flow via Chrome menu Exit and invokes onComplete', () => {
     const handleAction = vi.fn();
     const handleComplete = vi.fn();
 
@@ -335,15 +336,13 @@ describe('WebsiteSimulation Component', () => {
       />
     );
 
-    // Click safe exit icon in toolbar
-    const exitBtn = screen.getByTitle('Safe Exit');
+    // Open Chrome 3-dot menu
+    const menuBtn = screen.getByTestId('chrome-menu-btn');
+    fireEvent.click(menuBtn);
+
+    // Click Exit
+    const exitBtn = screen.getByTestId('chrome-exit-btn');
     fireEvent.click(exitBtn);
-
-    expect(screen.getByText('Exit Website Simulation?')).toBeInTheDocument();
-
-    // Confirm safe exit
-    const confirmExit = screen.getByText('Confirm Safe Exit');
-    fireEvent.click(confirmExit);
 
     expect(handleAction).toHaveBeenCalledWith(
       expect.objectContaining({

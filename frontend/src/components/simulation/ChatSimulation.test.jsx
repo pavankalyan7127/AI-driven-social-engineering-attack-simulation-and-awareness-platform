@@ -340,8 +340,8 @@ describe('ChatSimulation Component', () => {
     expect(screen.getByText('Scenario Unavailable')).toBeInTheDocument();
   });
 
-  // 12. Correct terminal callback behavior for safe exit
-  it('handles safe exit flow and invokes onComplete', () => {
+  // 12. Correct terminal callback behavior for blocking contact from options menu
+  it('handles block contact flow from options menu and invokes onComplete', () => {
     const handleAction = vi.fn();
     const handleComplete = vi.fn();
 
@@ -354,26 +354,26 @@ describe('ChatSimulation Component', () => {
       />
     );
 
-    // Click safe exit icon in list header
-    const exitBtns = screen.getAllByTitle(/Safe Exit/i);
-    fireEvent.click(exitBtns[0]);
+    // Open options menu in conversation header
+    const optionsBtn = screen.getByTestId('chat-options-button');
+    fireEvent.click(optionsBtn);
 
-    expect(screen.getByText('Exit Simulation Session?')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-options-menu')).toBeInTheDocument();
 
-    // Confirm safe exit
-    const confirmExit = screen.getByText('Confirm Safe Exit');
-    fireEvent.click(confirmExit);
+    // Click Block contact
+    const blockBtn = screen.getByRole('button', { name: /Block contact/i });
+    fireEvent.click(blockBtn);
 
     expect(handleAction).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: 'safe_exit',
+        eventType: 'user_blocked_sender',
       })
     );
 
     expect(handleComplete).toHaveBeenCalledWith(
       expect.objectContaining({
         status: 'safe_exit',
-        action: 'safe_exit',
+        action: 'user_blocked_sender',
       })
     );
   });

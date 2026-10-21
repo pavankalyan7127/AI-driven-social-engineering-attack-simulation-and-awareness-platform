@@ -5,6 +5,10 @@ import { sampleScenario } from './data/sampleScenario';
 import { sampleChatScenario } from './data/sampleChatScenario';
 import { sampleSmsScenario } from './data/sampleSmsScenario';
 import { sampleWebsiteScenario } from './data/sampleWebsiteScenario';
+import { sampleWhatsAppScenario } from './data/sampleWhatsAppScenario';
+import { sampleInstagramScenario } from './data/sampleInstagramScenario';
+import { sampleTelegramScenario } from './data/sampleTelegramScenario';
+import { sampleCallScenario } from './data/sampleCallScenario';
 import {
   Activity,
   Terminal,
@@ -91,7 +95,11 @@ export default function App() {
     email: sampleScenario,
     chat: sampleChatScenario,
     sms: sampleSmsScenario,
-    website: sampleWebsiteScenario
+    website: sampleWebsiteScenario,
+    whatsapp: sampleWhatsAppScenario,
+    instagram: sampleInstagramScenario,
+    telegram: sampleTelegramScenario,
+    call: sampleCallScenario
   };
 
   const handleScenarioGenerated = (scenario, sessionId, meta) => {
@@ -112,6 +120,7 @@ export default function App() {
     if (meta?.prompt) setSavedPrompt(meta.prompt);
     if (meta?.channel) setSavedChannel(meta.channel);
 
+    setOutcomeNotice(null);
     setSimulationCompletedData(null);
     setEvents([]);
     setActiveView('simulation');
@@ -419,6 +428,25 @@ export default function App() {
     setReportError(null);
 
     try {
+      // Ensure session is scored before generating awareness report
+      if (!behaviorScore || forceRetry) {
+        try {
+          const scoreRes = await fetch(`/api/sessions/${sessionId}/score`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          if (scoreRes.ok) {
+            const scoreData = await scoreRes.json();
+            const scoreObj = scoreData?.scoreRecord || scoreData?.score;
+            if (scoreObj) {
+              setBehaviorScore(scoreObj);
+            }
+          }
+        } catch (scoreErr) {
+          console.warn('[Score resolution before report warning]:', scoreErr);
+        }
+      }
+
       const response = await fetch(`/api/sessions/${sessionId}/report`, {
         method: 'POST',
         headers: {
@@ -647,8 +675,8 @@ export default function App() {
             </div>
           )}
 
-          {/* Responsive Viewport Toggle (Hidden for SMS - Mobile Only) */}
-          {currentScenario?.channel !== 'sms' && (
+          {/* Responsive Viewport Toggle (Hidden for SMS & Call - Mobile Only) */}
+          {currentScenario?.channel !== 'sms' && currentScenario?.channel !== 'call' && (
             <div data-testid="viewport-toggle-container" className="flex items-center bg-gray-800 rounded-lg p-0.5 border border-gray-700">
               <button
                 onClick={() => setDeviceWidthMode('full')}
@@ -683,7 +711,7 @@ export default function App() {
       <div className="flex-1 overflow-hidden relative flex items-center justify-center bg-gray-900">
         <div
           className={`h-full transition-all duration-300 ${
-            currentScenario?.channel === 'sms' || deviceWidthMode === 'mobile'
+            currentScenario?.channel === 'sms' || currentScenario?.channel === 'call' || deviceWidthMode === 'mobile'
               ? 'w-full max-w-[420px] shadow-2xl border-x border-gray-800 my-auto rounded-xl overflow-hidden'
               : 'w-full'
           }`}
@@ -691,6 +719,7 @@ export default function App() {
           <SimulationRenderer
             scenario={currentScenario}
             sessionId={currentSessionId || 'sess-default'}
+            deviceMode={deviceWidthMode}
             onAction={handleAction}
             onComplete={handleComplete}
           />
@@ -756,28 +785,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Outcome Notification Banner (Step 2) */}
-        {outcomeNotice && (
-          <div
-            data-testid="outcome-notification"
-            className={`absolute top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-2xl border flex items-center gap-3 backdrop-blur-md transition-all animate-in fade-in slide-in-from-top-4 duration-300 ${
-              outcomeNotice.type === 'positive'
-                ? 'bg-emerald-950/90 border-emerald-500/80 text-emerald-100 shadow-emerald-900/40'
-                : outcomeNotice.type === 'negative'
-                ? 'bg-red-950/90 border-red-500/80 text-red-100 shadow-red-900/40'
-                : 'bg-amber-950/90 border-amber-500/80 text-amber-100 shadow-amber-900/40'
-            }`}
-          >
-            {outcomeNotice.type === 'positive' ? (
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-            ) : outcomeNotice.type === 'negative' ? (
-              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
-            ) : (
-              <Clock className="w-5 h-5 text-amber-400 shrink-0" />
-            )}
-            <span className="text-xs font-semibold">{outcomeNotice.message}</span>
-          </div>
-        )}
 
         {/* Confirmation Modal for Manual End Simulation (Step 2) */}
         {showEndConfirmModal && (

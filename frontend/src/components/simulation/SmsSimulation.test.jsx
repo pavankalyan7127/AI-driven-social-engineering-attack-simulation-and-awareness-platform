@@ -277,8 +277,8 @@ describe('SmsSimulation Component', () => {
     );
   });
 
-  // 9. Safe-exit flow and completion callback
-  it('handles safe-exit flow and invokes onComplete', () => {
+  // 9. Block sender flow and positive completion callback
+  it('handles block sender flow and invokes onComplete with safe_exit', () => {
     const handleAction = vi.fn();
     const handleComplete = vi.fn();
 
@@ -291,26 +291,26 @@ describe('SmsSimulation Component', () => {
       />
     );
 
-    // Click safe exit icon in list header
-    const exitBtns = screen.getAllByTitle(/Safe Exit/i);
-    fireEvent.click(exitBtns[0]);
+    // Open target conversation
+    fireEvent.click(screen.getByText('Campus Courier Logistics'));
 
-    expect(screen.getByText('Exit SMS Simulation Session?')).toBeInTheDocument();
-
-    // Confirm safe exit
-    const confirmExit = screen.getByText('Confirm Safe Exit');
-    fireEvent.click(confirmExit);
+    // Click block button in conversation header
+    const blockBtn = screen.getByTestId('sms-block-btn');
+    fireEvent.click(blockBtn);
 
     expect(handleAction).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: 'safe_exit',
+        eventType: 'user_blocked_sender',
+        metadata: expect.objectContaining({
+          channel: 'sms'
+        })
       })
     );
 
     expect(handleComplete).toHaveBeenCalledWith(
       expect.objectContaining({
         status: 'safe_exit',
-        action: 'safe_exit',
+        action: 'user_blocked_sender',
       })
     );
   });
@@ -347,8 +347,8 @@ describe('SmsSimulation Component', () => {
     expect(screen.getByText('Scenario Unavailable')).toBeInTheDocument();
   });
 
-  // 12. Correct terminal callback behavior
-  it('correctly executes terminal callback without crashing', () => {
+  // 12. Correct terminal callback behavior via 3-dot options menu block
+  it('correctly executes terminal callback via options menu block', () => {
     const handleComplete = vi.fn();
     render(
       <SmsSimulation
@@ -358,15 +358,20 @@ describe('SmsSimulation Component', () => {
       />
     );
 
-    // Safe exit initiates terminal completion
-    const exitBtns = screen.getAllByTitle(/Safe Exit/i);
-    fireEvent.click(exitBtns[0]);
-    fireEvent.click(screen.getByText('Confirm Safe Exit'));
+    // Open target conversation
+    fireEvent.click(screen.getByText('Campus Courier Logistics'));
+
+    // Open 3-dot options menu
+    fireEvent.click(screen.getByTestId('sms-options-menu-btn'));
+
+    // Click block in menu
+    fireEvent.click(screen.getByTestId('sms-menu-block-btn'));
 
     expect(handleComplete).toHaveBeenCalledTimes(1);
     expect(handleComplete).toHaveBeenCalledWith(
       expect.objectContaining({
         status: 'safe_exit',
+        action: 'user_blocked_sender'
       })
     );
   });

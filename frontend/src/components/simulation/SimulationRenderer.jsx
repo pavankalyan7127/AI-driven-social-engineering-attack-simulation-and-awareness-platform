@@ -3,6 +3,10 @@ import EmailSimulation from './EmailSimulation';
 import ChatSimulation from './ChatSimulation';
 import SmsSimulation from './SmsSimulation';
 import WebsiteSimulation from './WebsiteSimulation';
+import WhatsAppSimulation from './WhatsAppSimulation';
+import InstagramSimulation from './InstagramSimulation';
+import TelegramSimulation from './TelegramSimulation';
+import VoiceCallSimulation from './VoiceCallSimulation';
 import { AlertOctagon, HelpCircle } from 'lucide-react';
 import { sendTelemetryEvent } from '../../services/telemetryService';
 
@@ -13,7 +17,11 @@ const SUPPORTED_CHANNELS = {
   EMAIL: 'email',
   CHAT: 'chat',
   SMS: 'sms',
-  WEBSITE: 'website'
+  WEBSITE: 'website',
+  WHATSAPP: 'whatsapp',
+  INSTAGRAM: 'instagram',
+  TELEGRAM: 'telegram',
+  CALL: 'call'
 };
 
 /**
@@ -31,7 +39,14 @@ function doesEventMatchRule(rawType, condTypeRaw) {
   if (linkEvents.includes(condType) && linkEvents.includes(rawType)) return true;
 
   // Canonical aliases: form submission & credential entry
-  const formEvents = ['simulated_form_submitted', 'credential_submitted', 'form_submitted'];
+  const formEvents = [
+    'simulated_form_submitted',
+    'credential_submitted',
+    'form_submitted',
+    'sensitive_info_disclosed',
+    'information_shared',
+    'sensitive_information_shared'
+  ];
   if (formEvents.includes(condType) && formEvents.includes(rawType)) return true;
 
   // Canonical aliases: messaging / replies
@@ -55,7 +70,10 @@ function doesEventMatchRule(rawType, condTypeRaw) {
     'safe_exit',
     'user_blocked_sender',
     'message_deleted',
-    'message_archived'
+    'message_archived',
+    'call_rejected',
+    'call_declined',
+    'call_hung_up'
   ];
   if (safeExitEvents.includes(condType) && safeExitEvents.includes(rawType)) {
     return true;
@@ -178,6 +196,7 @@ export function matchesTerminationCondition(event, terminationRules) {
 export default function SimulationRenderer({
   scenario,
   sessionId = 'sess-sim-default',
+  deviceMode = 'full',
   onAction,
   onEvent,
   onComplete
@@ -201,7 +220,10 @@ export default function SimulationRenderer({
   }
 
   // 2. Validate channel specification
-  const channel = (scenario.channel || '').toLowerCase().trim();
+  let channel = (scenario.channel || '').toLowerCase().trim();
+  if (channel === 'voice_call' || channel === 'phone_call' || channel === 'vishing') {
+    channel = 'call';
+  }
 
   if (!channel) {
     return (
@@ -325,12 +347,88 @@ export default function SimulationRenderer({
         <EmailSimulation
           scenario={scenario}
           sessionId={sessionId}
+          deviceMode={deviceMode}
           onAction={handleNormalizedAction}
           onComplete={handleNormalizedComplete}
         />
       );
 
-    case SUPPORTED_CHANNELS.CHAT:
+    case SUPPORTED_CHANNELS.WHATSAPP:
+      return (
+        <WhatsAppSimulation
+          scenario={scenario}
+          sessionId={sessionId}
+          deviceMode={deviceMode}
+          onAction={handleNormalizedAction}
+          onComplete={handleNormalizedComplete}
+        />
+      );
+
+    case SUPPORTED_CHANNELS.INSTAGRAM:
+      return (
+        <InstagramSimulation
+          scenario={scenario}
+          sessionId={sessionId}
+          deviceMode={deviceMode}
+          onAction={handleNormalizedAction}
+          onComplete={handleNormalizedComplete}
+        />
+      );
+
+    case SUPPORTED_CHANNELS.TELEGRAM:
+      return (
+        <TelegramSimulation
+          scenario={scenario}
+          sessionId={sessionId}
+          deviceMode={deviceMode}
+          onAction={handleNormalizedAction}
+          onComplete={handleNormalizedComplete}
+        />
+      );
+
+    case SUPPORTED_CHANNELS.CHAT: {
+      const platform = (scenario.platform || '').toLowerCase();
+      const title = (scenario.title || '').toLowerCase();
+      const desc = (scenario.description || '').toLowerCase();
+      const category = (scenario.category || '').toLowerCase();
+      const combinedText = `${platform} ${title} ${desc} ${category}`;
+
+      if (combinedText.includes('whatsapp')) {
+        return (
+          <WhatsAppSimulation
+            scenario={scenario}
+            sessionId={sessionId}
+            deviceMode={deviceMode}
+            onAction={handleNormalizedAction}
+            onComplete={handleNormalizedComplete}
+          />
+        );
+      }
+
+      if (combinedText.includes('instagram') || combinedText.includes('insta') || combinedText.includes(' ig ')) {
+        return (
+          <InstagramSimulation
+            scenario={scenario}
+            sessionId={sessionId}
+            deviceMode={deviceMode}
+            onAction={handleNormalizedAction}
+            onComplete={handleNormalizedComplete}
+          />
+        );
+      }
+
+      if (combinedText.includes('telegram')) {
+        return (
+          <TelegramSimulation
+            scenario={scenario}
+            sessionId={sessionId}
+            deviceMode={deviceMode}
+            onAction={handleNormalizedAction}
+            onComplete={handleNormalizedComplete}
+          />
+        );
+      }
+
       return (
         <ChatSimulation
           scenario={scenario}
@@ -339,6 +437,7 @@ export default function SimulationRenderer({
           onComplete={handleNormalizedComplete}
         />
       );
+    }
 
     case SUPPORTED_CHANNELS.SMS:
       return (
@@ -353,6 +452,16 @@ export default function SimulationRenderer({
     case SUPPORTED_CHANNELS.WEBSITE:
       return (
         <WebsiteSimulation
+          scenario={scenario}
+          sessionId={sessionId}
+          onAction={handleNormalizedAction}
+          onComplete={handleNormalizedComplete}
+        />
+      );
+
+    case SUPPORTED_CHANNELS.CALL:
+      return (
+        <VoiceCallSimulation
           scenario={scenario}
           sessionId={sessionId}
           onAction={handleNormalizedAction}

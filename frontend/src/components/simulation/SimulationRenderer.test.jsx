@@ -6,6 +6,9 @@ import { sampleScenario } from '../../data/sampleScenario';
 import { sampleChatScenario } from '../../data/sampleChatScenario';
 import { sampleSmsScenario } from '../../data/sampleSmsScenario';
 import { sampleWebsiteScenario } from '../../data/sampleWebsiteScenario';
+import { sampleWhatsAppScenario } from '../../data/sampleWhatsAppScenario';
+import { sampleInstagramScenario } from '../../data/sampleInstagramScenario';
+import { sampleTelegramScenario } from '../../data/sampleTelegramScenario';
 
 describe('SimulationRenderer Component', () => {
   // 1. Correct component selection for all four channels
@@ -64,6 +67,42 @@ describe('SimulationRenderer Component', () => {
     expect(screen.getByText('Student & Faculty Portal Login')).toBeInTheDocument();
   });
 
+  it('selects and renders WhatsAppSimulation when channel is whatsapp', () => {
+    render(
+      <SimulationRenderer
+        scenario={sampleWhatsAppScenario}
+        sessionId="test-session-wa"
+      />
+    );
+
+    expect(screen.getByRole('heading', { name: 'WhatsApp' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search or start a new chat')).toBeInTheDocument();
+  });
+
+  it('selects and renders InstagramSimulation when channel is instagram', () => {
+    render(
+      <SimulationRenderer
+        scenario={sampleInstagramScenario}
+        sessionId="test-session-ig"
+      />
+    );
+
+    expect(screen.getByText('_pavan_kalyan_1207')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Message...')).toBeInTheDocument();
+  });
+
+  it('selects and renders TelegramSimulation when channel is telegram', () => {
+    render(
+      <SimulationRenderer
+        scenario={sampleTelegramScenario}
+        sessionId="test-session-tg"
+      />
+    );
+
+    expect(screen.getByPlaceholderText('Search')).toBeInTheDocument();
+    expect(screen.getByText('Tamil Movies')).toBeInTheDocument();
+  });
+
   // 2. Event callback forwarding
   it('forwards telemetry events with normalized envelope', () => {
     const handleAction = vi.fn();
@@ -105,15 +144,14 @@ describe('SimulationRenderer Component', () => {
       />
     );
 
-    // Safe exit in SMS triggers completion
-    const exitBtns = screen.getAllByTitle(/Safe Exit/i);
-    fireEvent.click(exitBtns[0]);
-    fireEvent.click(screen.getByText('Confirm Safe Exit'));
+    // Blocking sender in SMS triggers completion
+    fireEvent.click(screen.getByText('Campus Courier Logistics'));
+    fireEvent.click(screen.getByTestId('sms-block-btn'));
 
     expect(handleComplete).toHaveBeenCalledWith(
       expect.objectContaining({
         status: 'safe_exit',
-        action: 'safe_exit',
+        action: 'user_blocked_sender',
         channel: 'sms',
         scenarioId: sampleSmsScenario.scenarioId,
         sessionId: 'test-session-sms',
@@ -121,23 +159,46 @@ describe('SimulationRenderer Component', () => {
     );
   });
 
-  // 4. Unsupported channel fallback
+  // 4b. Voice Call Channel
+  it('selects and renders VoiceCallSimulation when channel is call', () => {
+    const callScenario = {
+      scenarioId: 'scen-call-test',
+      channel: 'call',
+      title: 'Vishing Phone Simulation',
+      callData: {
+        callerName: 'Chase Fraud Team',
+        callerNumber: '+1-800-555-0199',
+        openingLine: 'Please verify your card numbers.'
+      }
+    };
+
+    render(
+      <SimulationRenderer
+        scenario={callScenario}
+        sessionId="test-session-call"
+      />
+    );
+
+    expect(screen.getByTestId('voice-call-simulation')).toBeInTheDocument();
+  });
+
+  // 4c. Unsupported channel fallback
   it('renders a clear fallback when scenario channel is unsupported', () => {
     const unsupportedScenario = {
       scenarioId: 'unsupported-001',
-      channel: 'voice_call',
-      title: 'Vishing Phone Simulation'
+      channel: 'fax_transmission',
+      title: 'Fax Simulation'
     };
 
     render(
       <SimulationRenderer
         scenario={unsupportedScenario}
-        sessionId="test-session-voice"
+        sessionId="test-session-fax"
       />
     );
 
     expect(screen.getByText('Unsupported Simulation Channel')).toBeInTheDocument();
-    expect(screen.getByText(/"voice_call"/i)).toBeInTheDocument();
+    expect(screen.getByText(/"fax_transmission"/i)).toBeInTheDocument();
   });
 
   // 5. Missing or malformed scenario fallback

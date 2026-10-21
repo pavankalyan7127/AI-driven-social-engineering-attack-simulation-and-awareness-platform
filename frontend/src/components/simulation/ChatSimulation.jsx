@@ -12,7 +12,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   AlertOctagon,
-  LogOut,
+  Ban,
   MoreVertical,
   X,
   Check,
@@ -148,8 +148,23 @@ export default function ChatSimulation({
   const [reportNotes, setReportNotes] = useState('');
   const [threatReportedConfirmed, setThreatReportedConfirmed] = useState(false);
 
-  // Safe exit confirmation modal state
-  const [isSafeExitModalOpen, setIsSafeExitModalOpen] = useState(false);
+  // Options 3-dot dropdown menu state
+  const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
+  const optionsMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (optionsMenuRef.current && !optionsMenuRef.current.contains(e.target)) {
+        setIsOptionsMenuOpen(false);
+      }
+    };
+    if (isOptionsMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOptionsMenuOpen]);
 
   // Single scenario_viewed event tracker to prevent duplicate emissions on rerender
   const hasEmittedViewed = useRef(false);
@@ -417,21 +432,23 @@ export default function ChatSimulation({
     }
   };
 
-  // Confirm safe exit
-  const handleConfirmSafeExit = () => {
-    emitEvent('safe_exit', {
-      reason: 'user_initiated_safe_exit',
-      conversationId: activeConvId
+  // Block contact action (Defensive Positive Termination)
+  const handleBlockContact = () => {
+    setIsOptionsMenuOpen(false);
+    emitEvent('user_blocked_sender', {
+      contactName: activeConversation?.contact?.name || 'Contact',
+      contactHandle: activeConversation?.contact?.handle,
+      conversationId: activeConvId,
+      reportedTarget: activeConversation?.isTarget
     });
-
-    setIsSafeExitModalOpen(false);
 
     if (typeof onComplete === 'function') {
       onComplete({
         status: 'safe_exit',
-        action: 'safe_exit',
+        action: 'user_blocked_sender',
         scenarioId,
-        sessionId
+        sessionId,
+        reason: `Blocked suspicious contact "${activeConversation?.contact?.name || 'Contact'}"`
       });
     }
   };
@@ -490,14 +507,6 @@ export default function ChatSimulation({
           </div>
 
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setIsSafeExitModalOpen(true)}
-              title="Safe Exit Simulation"
-              className="p-2 rounded-full hover:bg-black/5 text-gray-600 transition-colors"
-              aria-label="Safe Exit"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
           </div>
         </div>
 
@@ -690,24 +699,47 @@ export default function ChatSimulation({
               <span className="hidden sm:inline">Report Threat</span>
             </button>
 
-            {/* Safe Exit Simulation */}
-            <button
-              onClick={() => setIsSafeExitModalOpen(true)}
-              className="p-2 rounded-full hover:bg-black/5 text-gray-600 transition-colors"
-              title="Safe Exit"
-              aria-label="Safe Exit"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
+            {/* More Options Dropdown */}
+            <div className="relative" ref={optionsMenuRef}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsOptionsMenuOpen((prev) => !prev);
+                }}
+                className="p-2 rounded-full hover:bg-black/5 text-gray-600 transition-colors"
+                title="Options"
+                aria-label="Options"
+                data-testid="chat-options-button"
+              >
+                <MoreVertical className="w-5 h-5" />
+              </button>
 
-            {/* More Options */}
-            <button
-              className="p-2 rounded-full hover:bg-black/5 text-gray-600 transition-colors"
-              title="Options"
-              aria-label="Options"
-            >
-              <MoreVertical className="w-5 h-5" />
-            </button>
+              {isOptionsMenuOpen && (
+                <div
+                  data-testid="chat-options-menu"
+                  className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-xl py-1.5 z-50 text-xs text-gray-800 font-sans"
+                >
+                  <button
+                    onClick={() => {
+                      setIsOptionsMenuOpen(false);
+                      setIsReportModalOpen(true);
+                    }}
+                    className="w-full flex items-center px-4 py-2 hover:bg-red-50 text-left text-red-600 font-medium transition-colors"
+                  >
+                    <ShieldAlert className="w-4 h-4 mr-2.5 text-red-600 shrink-0" />
+                    <span>Report threat</span>
+                  </button>
+
+                  <button
+                    onClick={handleBlockContact}
+                    className="w-full flex items-center px-4 py-2 hover:bg-red-50 text-left text-red-600 font-medium transition-colors"
+                  >
+                    <Ban className="w-4 h-4 mr-2.5 text-red-600 shrink-0" />
+                    <span>Block contact</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -1182,43 +1214,6 @@ export default function ChatSimulation({
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>Confirm & Report Threat</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* SAFE EXIT MODAL                                                */}
-      {/* ============================================================== */}
-      {isSafeExitModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
-        >
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-gray-200 text-center">
-            <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mx-auto mb-3">
-              <LogOut className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-bold text-gray-900 mb-1.5">
-              Exit Simulation Session?
-            </h3>
-            <p className="text-xs text-gray-600 mb-5 leading-relaxed">
-              You are terminating this simulated messaging interaction. Your telemetry and response metrics will be finalized.
-            </p>
-            <div className="flex items-center justify-center gap-2.5">
-              <button
-                onClick={() => setIsSafeExitModalOpen(false)}
-                className="px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                Continue Simulation
-              </button>
-              <button
-                onClick={handleConfirmSafeExit}
-                className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors"
-              >
-                Confirm Safe Exit
               </button>
             </div>
           </div>

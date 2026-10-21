@@ -31,6 +31,11 @@ const PRESETS = [
     label: 'Single Sign-On Cloned Portal',
     hint: 'Website',
     prompt: 'Simulate a cloned corporate single sign-on (SSO) login page that prompts for university or enterprise credentials with simulated security badges.'
+  },
+  {
+    label: 'Bank Fraud Vishing Call',
+    hint: 'Call',
+    prompt: 'Simulate an urgent incoming voice call from a bank fraud prevention department claiming unauthorized wire transfers and demanding credit card or PIN confirmation.'
   }
 ];
 

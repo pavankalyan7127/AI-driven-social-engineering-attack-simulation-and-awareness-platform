@@ -10,7 +10,8 @@ import {
   ShieldCheck,
   AlertTriangle,
   AlertOctagon,
-  LogOut,
+  Ban,
+  MoreVertical,
   X,
   ExternalLink,
   Phone,
@@ -177,8 +178,9 @@ export default function SmsSimulation({
   const [reportNotes, setReportNotes] = useState('');
   const [threatReportedConfirmed, setThreatReportedConfirmed] = useState(false);
 
-  // Safe exit confirmation modal state
-  const [isSafeExitModalOpen, setIsSafeExitModalOpen] = useState(false);
+  // 3-dot options menu state
+  const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
+  const optionsMenuRef = useRef(null);
 
   // Single scenario_viewed event tracker to prevent duplicate emissions on rerender
   const hasEmittedViewed = useRef(false);
@@ -232,6 +234,21 @@ export default function SmsSimulation({
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [activeConversation?.messages?.length, currentView]);
+
+  // Close 3-dot options menu on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (optionsMenuRef.current && !optionsMenuRef.current.contains(event.target)) {
+        setIsOptionsMenuOpen(false);
+      }
+    }
+    if (isOptionsMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOptionsMenuOpen]);
 
   // Open conversation from inbox
   const handleOpenConversation = (conv) => {
@@ -382,21 +399,29 @@ export default function SmsSimulation({
     }
   };
 
-  // Confirm safe exit
-  const handleConfirmSafeExit = () => {
-    emitEvent('safe_exit', {
-      reason: 'user_initiated_safe_exit',
-      conversationId: activeConvId
+  // Block suspicious SMS sender (Positive defensive termination -> safe_exit)
+  const handleBlockSender = () => {
+    setIsOptionsMenuOpen(false);
+    const senderName = activeConversation?.sender?.name || activeConversation?.sender?.phoneNumber || 'Sender';
+
+    emitEvent('user_blocked_sender', {
+      conversationId: activeConvId,
+      senderName,
+      senderPhone: activeConversation?.sender?.phoneNumber,
+      reportedTarget: Boolean(activeConversation?.isTarget || activeConvId === targetId)
     });
 
-    setIsSafeExitModalOpen(false);
+    setConversations(prev => prev.filter(c => c.id !== activeConvId));
+    setActiveConvId(null);
+    setCurrentView('list');
 
     if (typeof onComplete === 'function') {
       onComplete({
         status: 'safe_exit',
-        action: 'safe_exit',
+        action: 'user_blocked_sender',
         scenarioId,
-        sessionId
+        sessionId,
+        reason: `Blocked suspicious SMS sender "${senderName}"`
       });
     }
   };
@@ -462,14 +487,6 @@ export default function SmsSimulation({
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsSafeExitModalOpen(true)}
-                title="Safe Exit Simulation"
-                className="p-2 rounded-full hover:bg-gray-100 text-gray-600 transition-colors"
-                aria-label="Safe Exit"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
             </div>
           </div>
 
@@ -652,15 +669,29 @@ export default function SmsSimulation({
             </div>
 
             {/* Header Action Tools */}
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1 shrink-0 relative" ref={optionsMenuRef}>
               {/* Report Smish Threat */}
               <button
                 onClick={() => setIsReportModalOpen(true)}
+                data-testid="sms-report-btn"
                 className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-50 hover:bg-red-100 text-red-700 text-[11px] font-semibold border border-red-200 transition-colors shadow-2xs"
                 title="Report smishing threat or scam"
+                aria-label="Report smishing threat"
               >
                 <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
                 <span className="inline">Report Smish</span>
+              </button>
+
+              {/* Block Sender */}
+              <button
+                onClick={handleBlockSender}
+                data-testid="sms-block-btn"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-semibold transition-colors"
+                title="Block sender"
+                aria-label="Block sender"
+              >
+                <Ban className="w-3.5 h-3.5 text-gray-600" />
+                <span className="inline">Block</span>
               </button>
 
               {/* Delete Conversation */}
@@ -673,15 +704,56 @@ export default function SmsSimulation({
                 <Trash2 className="w-4 h-4" />
               </button>
 
-              {/* Safe Exit */}
+              {/* 3-Dot More Options */}
               <button
-                onClick={() => setIsSafeExitModalOpen(true)}
+                onClick={() => setIsOptionsMenuOpen(prev => !prev)}
+                data-testid="sms-options-menu-btn"
                 className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors"
-                title="Safe Exit"
-                aria-label="Safe Exit"
+                title="More options"
+                aria-label="More options"
               >
-                <LogOut className="w-4 h-4" />
+                <MoreVertical className="w-4 h-4" />
               </button>
+
+              {/* 3-Dot Popover Menu */}
+              {isOptionsMenuOpen && (
+                <div
+                  data-testid="sms-options-menu"
+                  className="absolute right-0 top-9 w-44 bg-white border border-gray-200 rounded-xl shadow-xl py-1 z-50 text-xs animate-in fade-in zoom-in-95 duration-100"
+                >
+                  <button
+                    onClick={handleBlockSender}
+                    data-testid="sms-menu-block-btn"
+                    className="w-full px-3 py-2 flex items-center gap-2 text-gray-700 hover:bg-gray-50 transition-colors text-left"
+                  >
+                    <Ban className="w-3.5 h-3.5 text-gray-500" />
+                    <span>Block number</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsOptionsMenuOpen(false);
+                      setIsReportModalOpen(true);
+                    }}
+                    data-testid="sms-menu-report-btn"
+                    className="w-full px-3 py-2 flex items-center gap-2 text-red-600 hover:bg-red-50 transition-colors text-left"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
+                    <span>Report smishing</span>
+                  </button>
+                  <div className="h-px bg-gray-100 my-1" />
+                  <button
+                    onClick={() => {
+                      setIsOptionsMenuOpen(false);
+                      handleDeleteConversation();
+                    }}
+                    data-testid="sms-menu-delete-btn"
+                    className="w-full px-3 py-2 flex items-center gap-2 text-red-600 hover:bg-red-50 transition-colors text-left"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                    <span>Delete conversation</span>
+                  </button>
+                </div>
+              )}
             </div>
           </header>
 
@@ -1109,44 +1181,7 @@ export default function SmsSimulation({
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* SAFE EXIT MODAL                                                */}
-      {/* ============================================================== */}
-      {isSafeExitModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
-        >
-          <div className="bg-white rounded-2xl shadow-2xl max-w-xs w-full p-5 border border-gray-200 text-center">
-            <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mx-auto mb-2.5">
-              <LogOut className="w-5 h-5" />
-            </div>
-            <h3 className="text-sm font-bold text-gray-900 mb-1">
-              Exit SMS Simulation Session?
-            </h3>
-            <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-              You are terminating this simulated SMS interaction. Your telemetry and response metrics will be finalized.
-            </p>
-            <div className="flex items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsSafeExitModalOpen(false)}
-                className="px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                Continue Simulation
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmSafeExit}
-                className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors"
-              >
-                Confirm Safe Exit
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }

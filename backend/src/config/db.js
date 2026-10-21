@@ -41,12 +41,14 @@ export async function connectDB() {
   try {
     const conn = await mongoose.connect(mongoUrl, {
       dbName,
-      autoIndex: true
+      autoIndex: true,
+      serverSelectionTimeoutMS: 15000,
+      connectTimeoutMS: 15000
     });
     console.log(`[Database] MongoDB connection established successfully (db: ${dbName})`);
     return conn;
   } catch (err) {
-    console.error('[Database Connection Error]: Failed to connect to MongoDB.');
+    console.error(`[Database Connection Error]: Failed to connect to MongoDB (${err.message}).`);
     throw new Error(`Database connection failed: ${err.message}`);
   }
 }

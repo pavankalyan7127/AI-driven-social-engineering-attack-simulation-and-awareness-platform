@@ -123,13 +123,20 @@ export function isAuthorizedTerminalEvent(sessionStatus, eventType) {
 
   switch (normalizedStatus) {
     case 'reported':
-      return normalizedEvent === 'threat_reported' || normalizedEvent.startsWith('user_reported_');
+      return (
+        normalizedEvent === 'threat_reported' ||
+        normalizedEvent.startsWith('user_reported_') ||
+        normalizedEvent === 'user_blocked_sender'
+      );
     case 'safe_exit':
       return (
         normalizedEvent === 'safe_exit' ||
         normalizedEvent === 'user_blocked_sender' ||
         normalizedEvent === 'message_deleted' ||
-        normalizedEvent === 'message_archived'
+        normalizedEvent === 'message_archived' ||
+        normalizedEvent === 'call_rejected' ||
+        normalizedEvent === 'call_declined' ||
+        normalizedEvent === 'call_hung_up'
       );
     case 'abandoned':
       return normalizedEvent === 'simulation_abandoned';
@@ -141,6 +148,8 @@ export function isAuthorizedTerminalEvent(sessionStatus, eventType) {
         normalizedEvent === 'virtual_link_clicked' ||
         normalizedEvent === 'simulated_form_submitted' ||
         normalizedEvent === 'credential_submitted' ||
+        normalizedEvent === 'sensitive_info_disclosed' ||
+        normalizedEvent === 'information_shared' ||
         normalizedEvent === 'observation_window_elapsed'
       );
     default:

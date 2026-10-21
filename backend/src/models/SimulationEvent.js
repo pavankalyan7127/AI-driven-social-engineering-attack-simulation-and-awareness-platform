@@ -51,7 +51,17 @@ export const ALLOWED_EVENT_TYPES = [
   'form_submitted',
   'simulated_form_submitted',
   'virtual_link_clicked',
-  'credential_submitted'
+  'credential_submitted',
+
+  // Voice Call channel
+  'call_answered',
+  'call_rejected',
+  'call_declined',
+  'call_hung_up',
+  'speech_input_provided',
+  'dtmf_keypad_pressed',
+  'sensitive_info_disclosed',
+  'information_shared'
 ];
 
 const simulationEventSchema = new mongoose.Schema(
@@ -78,7 +88,7 @@ const simulationEventSchema = new mongoose.Schema(
     channel: {
       type: String,
       required: true,
-      enum: ['email', 'chat', 'sms', 'website'],
+      enum: ['email', 'chat', 'sms', 'website', 'whatsapp', 'instagram', 'telegram', 'call'],
       trim: true
     },
     eventType: {

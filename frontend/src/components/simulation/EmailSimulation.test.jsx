@@ -404,4 +404,117 @@ describe('EmailSimulation Component', () => {
       })
     );
   });
+
+  describe('Mobile Gmail App Simulation View (deviceMode="mobile")', () => {
+    it('renders authentic mobile inbox layout with search pill and compose FAB', () => {
+      render(
+        <EmailSimulation
+          scenario={sampleScenario}
+          sessionId="test-session-123"
+          deviceMode="mobile"
+        />
+      );
+
+      // Search pill input
+      expect(screen.getByPlaceholderText('Search in mail')).toBeInTheDocument();
+      // FAB Compose button
+      expect(screen.getByRole('button', { name: /compose/i })).toBeInTheDocument();
+      // Inbox section label
+      expect(screen.getByText('Inbox')).toBeInTheDocument();
+      // Target email item in list
+      expect(screen.getByText('VIT Events - Password reset')).toBeInTheDocument();
+    });
+
+    it('navigates to opened mobile email view with authentic bottom action pills and message 3-dot dropdown', () => {
+      const handleAction = vi.fn();
+      const handleComplete = vi.fn();
+
+      render(
+        <EmailSimulation
+          scenario={sampleScenario}
+          sessionId="test-session-123"
+          deviceMode="mobile"
+          onAction={handleAction}
+          onComplete={handleComplete}
+        />
+      );
+
+      // Tap on target email to open it
+      fireEvent.click(screen.getByText('VIT Events - Password reset'));
+
+      // Check mobile header & action pills
+      expect(screen.getByTitle('Back to inbox')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /unsubscribe/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /reply/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /forward/i })).toBeInTheDocument();
+
+      // Open message 3-dot menu
+      const messageMoreBtn = screen.getByTestId('message-more-button');
+      fireEvent.click(messageMoreBtn);
+
+      // Verify authentic mobile dropdown options
+      expect(screen.getByTestId('message-more-menu')).toBeInTheDocument();
+      expect(screen.getByText(/Block/i)).toBeInTheDocument();
+      expect(screen.getByText('Report spam')).toBeInTheDocument();
+      expect(screen.getByText('Report phishing')).toBeInTheDocument();
+
+      // Tap Block sender option
+      fireEvent.click(screen.getByText(/Block/i));
+
+      // Telemetry & positive termination verified
+      expect(handleAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'user_blocked_sender'
+        })
+      );
+      expect(handleComplete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'safe_exit',
+          action: 'user_blocked_sender'
+        })
+      );
+    });
+
+    it('renders mobile reply screen when Reply pill is tapped', () => {
+      const handleAction = vi.fn();
+
+      render(
+        <EmailSimulation
+          scenario={sampleScenario}
+          sessionId="test-session-123"
+          deviceMode="mobile"
+          onAction={handleAction}
+        />
+      );
+
+      // Open target email
+      fireEvent.click(screen.getByText('VIT Events - Password reset'));
+
+      // Tap Reply pill
+      fireEvent.click(screen.getByRole('button', { name: /reply/i }));
+
+      // Mobile reply view fields displayed
+      expect(screen.getByPlaceholderText('Compose email')).toBeInTheDocument();
+      expect(screen.getByText('From')).toBeInTheDocument();
+      expect(screen.getByTitle('Send reply')).toBeInTheDocument();
+
+      // Type reply text
+      fireEvent.change(screen.getByPlaceholderText('Compose email'), {
+        target: { value: 'Why do you need my password?' }
+      });
+
+      // Tap Send reply icon
+      fireEvent.click(screen.getByTitle('Send reply'));
+
+      // Verify reply_sent event emitted
+      expect(handleAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'reply_sent',
+          metadata: expect.objectContaining({
+            replyContent: 'Why do you need my password?'
+          })
+        })
+      );
+    });
+  });
 });

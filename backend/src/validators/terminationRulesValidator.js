@@ -42,6 +42,49 @@ export const CHANNEL_ALLOWED_EVENTS = {
     'threat_reported',
     'safe_exit',
     'user_blocked_sender',
+    'message_deleted',
+    'conversation_opened',
+    'observation_window_elapsed'
+  ],
+  whatsapp: [
+    'simulated_link_clicked',
+    'message_sent',
+    'attachment_interaction',
+    'attachment_opened',
+    'voice_interaction',
+    'warning_sign_selected',
+    'threat_reported',
+    'safe_exit',
+    'user_blocked_sender',
+    'message_deleted',
+    'conversation_opened',
+    'observation_window_elapsed'
+  ],
+  instagram: [
+    'simulated_link_clicked',
+    'message_sent',
+    'attachment_interaction',
+    'attachment_opened',
+    'voice_interaction',
+    'warning_sign_selected',
+    'threat_reported',
+    'safe_exit',
+    'user_blocked_sender',
+    'message_deleted',
+    'conversation_opened',
+    'observation_window_elapsed'
+  ],
+  telegram: [
+    'simulated_link_clicked',
+    'message_sent',
+    'attachment_interaction',
+    'attachment_opened',
+    'voice_interaction',
+    'warning_sign_selected',
+    'threat_reported',
+    'safe_exit',
+    'user_blocked_sender',
+    'message_deleted',
     'conversation_opened',
     'observation_window_elapsed'
   ],
@@ -66,6 +109,22 @@ export const CHANNEL_ALLOWED_EVENTS = {
     'safe_exit',
     'virtual_page_viewed',
     'observation_window_elapsed'
+  ],
+  call: [
+    'call_answered',
+    'call_rejected',
+    'call_declined',
+    'call_hung_up',
+    'speech_input_provided',
+    'dtmf_keypad_pressed',
+    'sensitive_info_disclosed',
+    'credential_submitted',
+    'information_shared',
+    'sensitive_information_shared',
+    'threat_reported',
+    'safe_exit',
+    'user_blocked_sender',
+    'observation_window_elapsed'
   ]
 };
 
@@ -74,6 +133,7 @@ export const PASSIVE_EVENTS = [
   'message_opened',
   'conversation_opened',
   'virtual_page_viewed',
+  'call_answered',
   'scenario_viewed',
   'interaction_recorded'
 ];
@@ -87,6 +147,8 @@ export const PASSIVE_EVENTS = [
  */
 export function scenarioSupportsCredentialSubmission(scenario, channel) {
   if (!scenario || typeof scenario !== 'object') return false;
+
+  if (channel === 'call') return true;
 
   if (channel === 'website' && scenario.pages && typeof scenario.pages === 'object') {
     for (const page of Object.values(scenario.pages)) {
@@ -140,8 +202,35 @@ function validateCondition(condition, polarity, channel, seenIds, scenario) {
   }
 
   // 3. Channel event compatibility
-  const allowedEvents = CHANNEL_ALLOWED_EVENTS[channel] || [];
   let eventType = condition.eventType;
+
+  // Normalize common LLM eventType aliases
+  if (typeof eventType === 'string') {
+    const rawLower = eventType.toLowerCase().trim();
+    if (channel === 'call') {
+      if (['information_shared', 'sensitive_information_shared', 'credentials_shared', 'info_shared', 'card_details_shared', 'pin_shared', 'credentials_disclosed', 'disclosed_info', 'data_leaked'].includes(rawLower)) {
+        eventType = 'sensitive_info_disclosed';
+        condition.eventType = 'sensitive_info_disclosed';
+      } else if (['call_declined', 'declined_call', 'call_rejected'].includes(rawLower)) {
+        eventType = 'call_rejected';
+        condition.eventType = 'call_rejected';
+      } else if (['call_ended', 'hang_up', 'call_hung_up'].includes(rawLower)) {
+        eventType = 'call_hung_up';
+        condition.eventType = 'call_hung_up';
+      } else if (['block_caller', 'blocked_caller', 'user_blocked_sender'].includes(rawLower)) {
+        eventType = 'user_blocked_sender';
+        condition.eventType = 'user_blocked_sender';
+      }
+    } else {
+      if (['link_clicked', 'url_clicked', 'phishing_link_clicked'].includes(rawLower)) {
+        const canonicalLink = channel === 'website' ? 'virtual_link_clicked' : 'simulated_link_clicked';
+        eventType = canonicalLink;
+        condition.eventType = canonicalLink;
+      }
+    }
+  }
+
+  const allowedEvents = CHANNEL_ALLOWED_EVENTS[channel] || [];
 
   if (trigger === 'event' || trigger === 'explicit_user_action') {
     if (!eventType || typeof eventType !== 'string') {
@@ -163,10 +252,12 @@ function validateCondition(condition, polarity, channel, seenIds, scenario) {
   // Safeguard: Credential submission conditions require actual simulated form inputs in scenario
   const credentialEvents = ['simulated_form_submitted', 'credential_submitted', 'simulated_credentials_submitted'];
   if (eventType && credentialEvents.includes(eventType)) {
-    if (!scenarioSupportsCredentialSubmission(scenario, channel)) {
-      errors.push(
-        `Condition "${id}" specifies credential submission event "${eventType}", but the scenario does not contain any credential form inputs.`
-      );
+    if (scenario?.pages && typeof scenario.pages === 'object' && Object.keys(scenario.pages).length > 0) {
+      if (!scenarioSupportsCredentialSubmission(scenario, channel)) {
+        errors.push(
+          `Condition "${id}" specifies credential submission event "${eventType}", but the scenario does not contain any credential form inputs.`
+        );
+      }
     }
   }
 
@@ -419,6 +510,14 @@ export function generateDefaultTerminationRules(channel) {
           explanation: 'The user reported the suspicious SMS.'
         },
         {
+          id: 'block_sender',
+          trigger: 'event',
+          eventType: 'user_blocked_sender',
+          points: 25,
+          label: 'Blocked suspicious sender',
+          explanation: 'The user blocked the unverified SMS sender.'
+        },
+        {
           id: 'safe_exit',
           trigger: 'event',
           eventType: 'safe_exit',
@@ -461,6 +560,14 @@ export function generateDefaultTerminationRules(channel) {
       ],
       negativeConditions: [
         {
+          id: 'simulated_form_submitted',
+          trigger: 'event',
+          eventType: 'simulated_form_submitted',
+          points: 30,
+          label: 'Submitted credentials on counterfeit portal',
+          explanation: 'The user entered credentials into the phishing form.'
+        },
+        {
           id: 'virtual_link_clicked',
           trigger: 'event',
           eventType: 'virtual_link_clicked',
@@ -469,8 +576,63 @@ export function generateDefaultTerminationRules(channel) {
           explanation: 'The user clicked an external link on the untrusted portal.'
         }
       ]
+    },
+    call: {
+      version: '1.0',
+      observationWindowSeconds: 120,
+      positiveConditions: [
+        {
+          id: 'call_rejected',
+          trigger: 'event',
+          eventType: 'call_rejected',
+          points: 30,
+          label: 'Declined suspicious call',
+          explanation: 'The user declined the unverified or flagged incoming voice call.'
+        },
+        {
+          id: 'report_threat',
+          trigger: 'event',
+          eventType: 'threat_reported',
+          points: 25,
+          label: 'Reported vishing call',
+          explanation: 'The user reported the suspicious call as fraud or vishing.'
+        },
+        {
+          id: 'block_caller',
+          trigger: 'event',
+          eventType: 'user_blocked_sender',
+          points: 20,
+          label: 'Blocked caller number',
+          explanation: 'The user blocked the imposter caller phone number.'
+        },
+        {
+          id: 'safe_hangup',
+          trigger: 'event',
+          eventType: 'safe_exit',
+          points: 15,
+          label: 'Safely hung up call',
+          explanation: 'The user hung up the call without providing credentials.'
+        }
+      ],
+      negativeConditions: [
+        {
+          id: 'disclosed_sensitive_info',
+          trigger: 'event',
+          eventType: 'credential_submitted',
+          points: 35,
+          label: 'Disclosed sensitive information',
+          explanation: 'The user spoke or entered requested sensitive financial/identity credentials during the phone call.'
+        }
+      ]
     }
   };
+
+  rulesByChannel.whatsapp = rulesByChannel.chat;
+  rulesByChannel.instagram = rulesByChannel.chat;
+  rulesByChannel.telegram = rulesByChannel.chat;
+  rulesByChannel.voice_call = rulesByChannel.call;
+  rulesByChannel.phone_call = rulesByChannel.call;
+  rulesByChannel.vishing = rulesByChannel.call;
 
   return rulesByChannel[normChannel] || rulesByChannel.email;
 }
