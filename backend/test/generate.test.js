@@ -6,6 +6,7 @@ process.env.GROQ_API_KEY = 'gsk_test_mock_key';
 process.env.GROQ_MODEL = 'openai/gpt-oss-20b';
 
 const mockCreate = vi.fn();
+const mockAudioTranscriptionsCreate = vi.fn();
 
 vi.mock('groq-sdk', () => {
   return {
@@ -16,8 +17,18 @@ vi.mock('groq-sdk', () => {
             create: mockCreate
           }
         };
+        this.audio = {
+          transcriptions: {
+            create: mockAudioTranscriptionsCreate
+          }
+        };
       }
-    }
+    },
+    toFile: vi.fn().mockImplementation(async (buf, name, opts) => ({
+      name: name || 'file.webm',
+      type: opts?.type || 'audio/webm',
+      buffer: buf
+    }))
   };
 });
 
@@ -678,6 +689,35 @@ describe('POST /api/scenarios/generate - AI Scenario Generation', () => {
       expect(res.body.attackerSpeech).toBe("Thank you, your card is verified.");
     });
 
+    it('maintains language (Tamil) and generates attacker speech in Tamil when language is Tamil', async () => {
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                attackerSpeech: "உங்கள் விவரங்களை உடனடியாக சரிபார்க்கவும், இல்லையெனில் உங்கள் கணக்கு முடக்கப்படும்.",
+                sensitiveInfoDisclosed: false,
+                explanation: "Caller demanded verification in Tamil."
+              })
+            }
+          }
+        ]
+      });
+
+      const res = await request(app)
+        .post('/api/scenarios/call/respond')
+        .send({
+          userSpeech: "நான் என் கடவுச்சொல்லை சொல்ல மாட்டேன்",
+          callerName: "வங்கி பாதுகாப்பு அதிகாரி",
+          language: "Tamil"
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.attackerSpeech).toMatch(/[\u0B80-\u0BFF]/);
+      expect(res.body.sensitiveInfoDisclosed).toBe(false);
+    });
+
     it('returns 400 when userSpeech is missing', async () => {
       const res = await request(app)
         .post('/api/scenarios/call/respond')
@@ -804,6 +844,291 @@ describe('POST /api/scenarios/generate - AI Scenario Generation', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.decision).toBe('positive_termination');
       expect(res.body.status).toBe('safe_exit');
+    });
+  });
+
+  // 11. Multilingual Support
+  describe('Multilingual Scenario Generation & Analysis', () => {
+    it('detects Tamil script from prompt and returns language: Tamil', async () => {
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                ...sampleValidScenarios.email,
+                title: 'வங்கி கணக்கு முடக்கம் எச்சரிக்கை',
+                emailData: {
+                  ...sampleValidScenarios.email.emailData,
+                  subject: 'அவசரம்: உங்கள் வங்கி கணக்கு தற்காலிகமாக முடக்கப்பட்டது'
+                }
+              })
+            }
+          }
+        ]
+      });
+
+      const res = await request(app)
+        .post('/api/scenarios/generate')
+        .send({
+          prompt: 'வங்கி கணக்கு முடக்கம் பற்றிய ஃபிஷிங் மின்னஞ்சல் உருவகப்படுத்துதல்',
+          channel: 'email'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.language).toBe('Tamil');
+      expect(res.body.scenario.language).toBe('Tamil');
+    });
+
+    it('accepts explicit language: "te" (Telugu) and passes instruction to Groq', async () => {
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                ...sampleValidScenarios.sms,
+                title: 'బ్యాంక్ మోసం హెచ్చరిక SMS'
+              })
+            }
+          }
+        ]
+      });
+
+      const res = await request(app)
+        .post('/api/scenarios/generate')
+        .send({
+          prompt: 'Simulate a bank fraud alert smishing text message in Telugu',
+          channel: 'sms',
+          language: 'te'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.language).toBe('Telugu');
+    });
+
+    it('evaluates Tamil email reply in fallback evaluator as positive_termination', async () => {
+      mockCreate.mockRejectedValueOnce(new Error('Rate limit'));
+
+      const res = await request(app)
+        .post('/api/scenarios/email/evaluate-reply')
+        .send({
+          replyContent: 'இது ஒரு போலி மோசடி செய்தி, நான் தகவல் தொழில்நுட்ப பாதுகாப்பு பிரிவுக்கு புகார் செய்கிறேன்'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.decision).toBe('positive_termination');
+      expect(res.body.status).toBe('safe_exit');
+    });
+  });
+
+  // 12. Dynamic Chat & SMS Attacker Response & Leak Detection
+  describe('POST /api/scenarios/chat/respond', () => {
+    it('returns 400 when userMessage is missing', async () => {
+      const res = await request(app)
+        .post('/api/scenarios/chat/respond')
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toMatch(/Missing or invalid "userMessage"/i);
+    });
+
+    it('returns persuasive attacker reply and sensitiveInfoDisclosed: false for conversational query', async () => {
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                reply: 'This is security officer Alex. Please click the link immediately or your login will be terminated.',
+                sensitiveInfoDisclosed: false,
+                isNegativeTermination: false,
+                explanation: 'User questioned identity; attacker applied urgency.'
+              })
+            }
+          }
+        ]
+      });
+
+      const res = await request(app)
+        .post('/api/scenarios/chat/respond')
+        .send({
+          userMessage: 'Who is this and why are you messaging me on WhatsApp?',
+          channel: 'whatsapp',
+          contactName: 'IT Support',
+          personaContext: 'IT Helpdesk requiring password reset',
+          scenarioContext: 'Urgent password reset attack'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.reply).toContain('Alex');
+      expect(res.body.sensitiveInfoDisclosed).toBe(false);
+      expect(res.body.isNegativeTermination).toBe(false);
+    });
+
+    it('detects credential disclosure and returns sensitiveInfoDisclosed: true / isNegativeTermination: true', async () => {
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                reply: 'Thank you. We have received your temporary PIN and your account is now secured.',
+                sensitiveInfoDisclosed: true,
+                isNegativeTermination: true,
+                explanation: 'User disclosed secret PIN.'
+              })
+            }
+          }
+        ]
+      });
+
+      const res = await request(app)
+        .post('/api/scenarios/chat/respond')
+        .send({
+          userMessage: 'Okay fine, my PIN is 4829',
+          channel: 'sms',
+          contactName: 'Bank Fraud Alert'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.sensitiveInfoDisclosed).toBe(true);
+      expect(res.body.isNegativeTermination).toBe(true);
+      expect(res.body.status).toBe('completed');
+      expect(res.body.action).toBe('sensitive_info_disclosed');
+    });
+
+    it('falls back to local heuristic analyzer when Groq fails', async () => {
+      mockCreate.mockRejectedValueOnce(new Error('Groq unavailable'));
+
+      const res = await request(app)
+        .post('/api/scenarios/chat/respond')
+        .send({
+          userMessage: 'Here is my password: SecurePass123',
+          channel: 'chat'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.sensitiveInfoDisclosed).toBe(true);
+      expect(res.body.isNegativeTermination).toBe(true);
+    });
+
+    it('maintains Tamil script in fallback mode when user chats in Tamil', async () => {
+      mockCreate.mockRejectedValueOnce(new Error('Groq offline'));
+
+      const res = await request(app)
+        .post('/api/scenarios/chat/respond')
+        .send({
+          userMessage: 'எனது கடவுச்சொல் ரகசியம்1234',
+          language: 'Tamil',
+          channel: 'telegram'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.sensitiveInfoDisclosed).toBe(true);
+      expect(res.body.reply).toMatch(/[\u0B80-\u0BFF]/);
+    });
+
+    it('treats compliance or agreement statements ("okay i will click the link") as negative termination', async () => {
+      mockCreate.mockRejectedValueOnce(new Error('Groq offline'));
+
+      const res = await request(app)
+        .post('/api/scenarios/chat/respond')
+        .send({
+          userMessage: "okay i'll click the link right now",
+          channel: 'whatsapp'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.sensitiveInfoDisclosed).toBe(true);
+      expect(res.body.isNegativeTermination).toBe(true);
+      expect(res.body.action).toBe('sensitive_info_disclosed');
+    });
+
+    it('treats regional language compliance statements as negative termination in fallback', async () => {
+      mockCreate.mockRejectedValueOnce(new Error('Groq offline'));
+
+      const res = await request(app)
+        .post('/api/scenarios/chat/respond')
+        .send({
+          userMessage: 'சரி நான் லிங்க் கிளிக் செய்கிறேன்',
+          language: 'Tamil',
+          channel: 'instagram'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.sensitiveInfoDisclosed).toBe(true);
+      expect(res.body.isNegativeTermination).toBe(true);
+    });
+  });
+
+  describe('POST /api/scenarios/voice/transcribe', () => {
+    it('returns 400 when no audio file is uploaded', async () => {
+      const res = await request(app)
+        .post('/api/scenarios/voice/transcribe');
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toMatch(/Missing or empty audio file/i);
+    });
+
+    it('transcribes uploaded audio and auto-detects language using Groq Whisper', async () => {
+      mockAudioTranscriptionsCreate.mockResolvedValueOnce({
+        text: 'இது ஒரு வங்கி மோசடி சோதனை',
+        language: 'ta'
+      });
+
+      const fakeAudioBuffer = Buffer.from('RIFF....WAVEfmt ');
+
+      const res = await request(app)
+        .post('/api/scenarios/voice/transcribe')
+        .attach('audio', fakeAudioBuffer, { filename: 'sample.webm', contentType: 'audio/webm' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.text).toBe('இது ஒரு வங்கி மோசடி சோதனை');
+      expect(res.body.detectedLanguage).toBe('ta');
+      expect(res.body.languageName).toBe('Tamil');
+      expect(mockAudioTranscriptionsCreate).toHaveBeenCalled();
+    });
+
+    it('corrects Dravidian script confusion by disambiguating Telugu spoken audio transcribed in Tamil characters', async () => {
+      mockAudioTranscriptionsCreate.mockResolvedValueOnce({
+        text: 'ஹாய் எலா உன்னாவு பவன் கலான் அணிவாடு நாத்தைகர் ஒச்சி நாப்போன் பாச்வட் அடிக்கினொரு நீ இயலேது',
+        language: 'ta'
+      });
+
+      mockCreate.mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                trueLanguage: 'te',
+                languageName: 'Telugu',
+                correctedText: 'హాయ్ ఎలా ఉన్నావు పవన్ కళ్యాణ్ అనేవాడు నా దగ్గర వచ్చి నా ఫోన్ పాస్‌వర్డ్ అడిగినాడు నేను ఇవ్వలేదు'
+              })
+            }
+          }
+        ]
+      });
+
+      const fakeAudioBuffer = Buffer.from('RIFF....WAVEfmt ');
+
+      const res = await request(app)
+        .post('/api/scenarios/voice/transcribe')
+        .attach('audio', fakeAudioBuffer, { filename: 'telugu_sample.webm', contentType: 'audio/webm' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.detectedLanguage).toBe('te');
+      expect(res.body.languageName).toBe('Telugu');
+      expect(res.body.text).toContain('హాయ్ ఎలా ఉన్నావు');
     });
   });
 });

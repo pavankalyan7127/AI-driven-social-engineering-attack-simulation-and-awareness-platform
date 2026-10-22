@@ -1,7 +1,48 @@
-import Groq from 'groq-sdk';
+import Groq, { toFile } from 'groq-sdk';
 import { validateScenario } from '../validators/scenarioValidator.js';
 import { ALLOWED_ATTACK_TYPES } from '../config/attackTaxonomy.js';
 import { analyzeReferenceImages } from './imageAnalysisService.js';
+
+/**
+ * Detects the language of user prompt or maps requested language code to a full language name.
+ * 
+ * @param {string} text - User prompt text
+ * @param {string} requestedLang - Optional requested language code (e.g. 'ta', 'te', 'hi', 'en', 'auto')
+ * @returns {string} Detected language name (e.g. 'Tamil', 'Telugu', 'Hindi', 'English')
+ */
+export function detectLanguage(text = '', requestedLang = 'auto') {
+  if (requestedLang && requestedLang !== 'auto') {
+    const langMap = {
+      ta: 'Tamil',
+      te: 'Telugu',
+      hi: 'Hindi',
+      kn: 'Kannada',
+      ml: 'Malayalam',
+      bn: 'Bengali',
+      mr: 'Marathi',
+      en: 'English'
+    };
+    return langMap[requestedLang.toLowerCase()] || requestedLang;
+  }
+
+  // Detect script from Unicode ranges
+  if (/[\u0B80-\u0BFF]/.test(text)) return 'Tamil';
+  if (/[\u0C00-\u0C7F]/.test(text)) return 'Telugu';
+  if (/[\u0900-\u097F]/.test(text)) return 'Hindi';
+  if (/[\u0C80-\u0CFF]/.test(text)) return 'Kannada';
+  if (/[\u0D00-\u0D7F]/.test(text)) return 'Malayalam';
+  if (/[\u0980-\u09FF]/.test(text)) return 'Bengali';
+
+  // Detect explicit keyword mentions
+  const lower = text.toLowerCase();
+  if (/\b(?:in\s+tamil|tamil\s+language|in\s+tamizh)\b/i.test(lower)) return 'Tamil';
+  if (/\b(?:in\s+telugu|telugu\s+language)\b/i.test(lower)) return 'Telugu';
+  if (/\b(?:in\s+hindi|hindi\s+language)\b/i.test(lower)) return 'Hindi';
+  if (/\b(?:in\s+kannada|kannada\s+language)\b/i.test(lower)) return 'Kannada';
+  if (/\b(?:in\s+malayalam|malayalam\s+language)\b/i.test(lower)) return 'Malayalam';
+
+  return 'English';
+}
 
 /**
  * Builds unified system prompt instructing the model to predict the simulation channel,
@@ -9,9 +50,10 @@ import { analyzeReferenceImages } from './imageAnalysisService.js';
  * structured termination rules.
  * 
  * @param {string|null} requestedChannel
+ * @param {string|null} language
  * @returns {string}
  */
-export function buildScenarioSystemPrompt(requestedChannel = null) {
+export function buildScenarioSystemPrompt(requestedChannel = null, language = null) {
   const channelInstruction = requestedChannel
     ? `Strictly generate a "${requestedChannel}" scenario. The "channel" property MUST be "${requestedChannel}".`
     : `You must automatically analyze the attack vector in the user prompt and predict the single most realistic educational simulation channel. The "channel" property MUST be exactly one of: "email", "chat", "sms", "website", "whatsapp", "instagram", "telegram", or "call".
@@ -252,6 +294,12 @@ IMPORTANT RULES & CONSTRAINTS:
    - NEVER treat opening, viewing, or reading a message ("message_opened", "conversation_opened", "virtual_page_viewed") as a negative failure condition.
    - Condition IDs must be unique strings (e.g. "report_threat", "safe_exit", "malicious_link_clicked").
    - Points must be integers between 1 and 50.
+
+6. MULTILINGUAL OUTPUT INSTRUCTIONS:
+${(language && language !== 'English')
+  ? `The user explicitly requested this simulation scenario in "${language}". You MUST generate ALL user-facing text (email subject, body text, preview, chat/SMS messages, website headings, paragraphs, form labels, placeholder text, and caller speech) in authentic, natural ${language} using native ${language} script.
+CRITICAL CONSTRAINT: All JSON property names and structural keys (e.g. "scenarioId", "channel", "title", "subject", "body", "text", "type", "id", "sender", "recipient", "options", "terminationRules", "attackClassification") MUST remain strictly in English ASCII so the simulator runtime operates seamlessly. Only translate the human-readable text values.`
+  : `If the user prompt is written in or requests an Indian regional language (such as Tamil, Telugu, Hindi, Kannada, Malayalam, Bengali, etc.), you MUST generate all human-facing attack content (email subject/body, chat/SMS messages, website content, caller speech) in that EXACT language and script. All JSON keys MUST remain strictly in English.`}
 `;
 }
 
@@ -334,6 +382,7 @@ export function repairAndParseScenarioJson(rawJson) {
 export async function generateScenarioWithGroq({
   prompt,
   channel = null,
+  language = 'auto',
   files = [],
   hasImages = false,
   customGroqClient = null,
@@ -345,6 +394,9 @@ export async function generateScenarioWithGroq({
     error.statusCode = 503;
     throw error;
   }
+
+  // Detect language if 'auto' or map requested language code
+  const effectiveLang = detectLanguage(prompt, language);
 
   // 1. Run OCR analysis on uploaded reference images if provided
   let imageAnalysis = null;
@@ -360,7 +412,7 @@ export async function generateScenarioWithGroq({
   const groq = customGroqClient || new Groq({ apiKey });
   const model = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 
-  const systemPrompt = buildScenarioSystemPrompt(channel);
+  const systemPrompt = buildScenarioSystemPrompt(channel, effectiveLang);
 
   // Build user content, augmenting with OCR extracted text and branding
   let referenceContext = '';
@@ -379,10 +431,14 @@ ${imageAnalysis.fullExtractedText}
 INSTRUCTION: Faithfully replicate the visual context, brand styling, sender persona, urgent pretext, and text content extracted from the reference image into the generated scenario JSON schema.`;
   }
 
-  const userContent = (channel
+  let userContent = (channel
     ? `Generate a realistic educational cybersecurity simulation scenario for channel "${channel}" based on this prompt: "${prompt}".`
     : `Analyze this scenario prompt, predict the best simulation channel, classify the attack, and generate the complete educational scenario JSON: "${prompt}".`
   ) + referenceContext;
+
+  if (effectiveLang && effectiveLang !== 'English') {
+    userContent += `\n\nCRITICAL LANGUAGE REQUIREMENT: The scenario MUST be written in ${effectiveLang} (using native ${effectiveLang} script). Keep all JSON keys strictly in English.`;
+  }
 
   let response;
   let rawContent = null;
@@ -429,9 +485,13 @@ INSTRUCTION: Faithfully replicate the visual context, brand styling, sender pers
         const validation = validateScenario(repaired, channel);
         if (validation.valid) {
           console.log('[Groq Service]: Successfully repaired and validated scenario from failed_generation payload.');
+          if (effectiveLang && !validation.scenario.language) {
+            validation.scenario.language = effectiveLang;
+          }
           return {
             scenario: validation.scenario,
             modelUsed: model,
+            language: effectiveLang,
             sessionId: `sess-${validation.scenario.channel}-${Date.now()}`,
             imageAnalysis: imageAnalysis || (hasImages
               ? {
@@ -451,6 +511,8 @@ INSTRUCTION: Faithfully replicate the visual context, brand styling, sender pers
         return await generateScenarioWithGroq({
           prompt,
           channel,
+          language,
+          files,
           hasImages,
           customGroqClient: groq,
           isRetry: true
@@ -503,9 +565,14 @@ INSTRUCTION: Faithfully replicate the visual context, brand styling, sender pers
   const validatedScenario = validation.scenario;
   const determinedChannel = validatedScenario.channel;
 
+  if (effectiveLang && !validatedScenario.language) {
+    validatedScenario.language = effectiveLang;
+  }
+
   return {
     scenario: validatedScenario,
     modelUsed: model,
+    language: effectiveLang,
     sessionId: `sess-${determinedChannel}-${Date.now()}`,
     imageAnalysis: imageAnalysis || (hasImages
       ? {
@@ -519,7 +586,7 @@ INSTRUCTION: Faithfully replicate the visual context, brand styling, sender pers
 /**
  * Fallback response analyzer when Groq API key is absent or network fails
  */
-function fallbackCallResponse(userSpeech, targetInformation) {
+function fallbackCallResponse(userSpeech, targetInformation, effectiveLang = 'English') {
   const text = (userSpeech || '').toLowerCase();
   
   // Heuristic sensitive info check: credit card patterns (12-19 digits, spaced or dashed),
@@ -533,29 +600,69 @@ function fallbackCallResponse(userSpeech, targetInformation) {
     text.includes('cvv is') ||
     text.includes('digits are') ||
     text.includes('password is') ||
-    text.includes('code is');
+    text.includes('code is') ||
+    text.includes('கடவுச்சொல்') ||
+    text.includes('எண்') ||
+    text.includes('பின்') ||
+    text.includes('పాస్‌వర్డ్') ||
+    text.includes('పిన్') ||
+    text.includes('पासवर्ड') ||
+    text.includes('पिन');
 
   const sensitiveInfoDisclosed = hasDigitSequence || mentionsDisclosure;
 
   if (sensitiveInfoDisclosed) {
+    let attackerSpeech = "Thank you. Your credentials have been received and verified. The fraud hold on your card is being processed now.";
+    if (effectiveLang === 'Tamil') {
+      attackerSpeech = "நன்றி. உங்கள் விவரங்கள் சரிபார்க்கப்பட்டுவிட்டன. உங்கள் கணக்கு மீதான மோசடி தடுப்பு நடவடிக்கை முடிந்தது. வணக்கம்.";
+    } else if (effectiveLang === 'Telugu') {
+      attackerSpeech = "ధన్యవాదాలు. మీ ఆధారాలు ధృవీకరించబడ్డాయి. మీ ఖాతా ఇప్పుడు రక్షించబడింది.";
+    } else if (effectiveLang === 'Hindi') {
+      attackerSpeech = "धन्यवाद। आपके विवरण सत्यापित हो चुके हैं। आपका खाता अब सुरक्षित है।";
+    }
+
     return {
-      attackerSpeech: "Thank you. Your credentials have been received and verified. The fraud hold on your card is being processed now.",
+      attackerSpeech,
       sensitiveInfoDisclosed: true,
       explanation: "User disclosed numbers or card credential details during the call."
     };
   }
 
   // Refusal or evasion patterns
-  if (text.includes("can't") || text.includes('cannot') || text.includes('won\'t') || text.includes('refuse') || text.includes('no') || text.includes('fake') || text.includes('scam')) {
+  const isRefusal =
+    text.includes("can't") || text.includes('cannot') || text.includes("won't") || text.includes('refuse') || text.includes('no') || text.includes('fake') || text.includes('scam') ||
+    text.includes('முடியாது') || text.includes('போலி') || text.includes('மோசடி') || text.includes('மாட்டேன்') ||
+    text.includes('వీలుకాదు') || text.includes('నకిలీ') || text.includes('మోసం') ||
+    text.includes('नहीं') || text.includes('धोखा') || text.includes('नकली');
+
+  if (isRefusal) {
+    let attackerSpeech = `Sir, this is an official security alert. If you do not verify your ${targetInformation} right now, we will be forced to permanently freeze your banking privileges.`;
+    if (effectiveLang === 'Tamil') {
+      attackerSpeech = `சார், இது அவசர அதிகாரப்பூர்வ பாதுகாப்பு எச்சரிக்கை. உங்கள் ${targetInformation} விவரங்களை இப்போது சரிபார்க்கவில்லை என்றால் உங்கள் கணக்கு நிரந்தரமாக முடக்கப்படும்.`;
+    } else if (effectiveLang === 'Telugu') {
+      attackerSpeech = `సర్, ఇది అధికారిక భద్రతా హెచ్చరిక. మీరు ఇప్పుడే మీ ${targetInformation} ని ధృవీకరించకపోతే మీ ఖాతా శాశ్వతంగా స్తంభింపజేయబడుతుంది.`;
+    } else if (effectiveLang === 'Hindi') {
+      attackerSpeech = `सर, यह एक आधिकारिक सुरक्षा चेतावनी है। यदि आप अभी अपना ${targetInformation} सत्यापित नहीं करते हैं, तो आपका खाता ब्लॉक कर दिया जाएगा।`;
+    }
+
     return {
-      attackerSpeech: `Sir, this is an official security alert. If you do not verify your ${targetInformation} right now, we will be forced to permanently freeze your banking privileges.`,
+      attackerSpeech,
       sensitiveInfoDisclosed: false,
       explanation: "User resisted or questioned caller authority."
     };
   }
 
+  let attackerSpeech = `I understand your hesitation, but we have unauthorized international transactions pending. I need you to confirm your ${targetInformation} so we can safeguard your account.`;
+  if (effectiveLang === 'Tamil') {
+    attackerSpeech = `உங்கள் தயக்கம் புரிகிறது, ஆனால் உங்கள் கணக்கில் சந்தேகத்திற்குரிய பரிவர்த்தனைகள் நடக்கின்றன. கணக்கை பாதுகாக்க உடனடியாக உங்கள் ${targetInformation} விவரங்களை உறுதிப்படுத்தவும்.`;
+  } else if (effectiveLang === 'Telugu') {
+    attackerSpeech = `మీ సంకోచం అర్థమైంది, కానీ అనధికారిక లావాదేవీలను ఆపడానికి వెంటనే మీ ${targetInformation} ని నిర్ధారించండి.`;
+  } else if (effectiveLang === 'Hindi') {
+    attackerSpeech = `आपकी झिझक समझ में आती है, लेकिन धोखाधड़ी रोकने के लिए तुरंत अपना ${targetInformation} सत्यापित करें।`;
+  }
+
   return {
-    attackerSpeech: `I understand your hesitation, but we have unauthorized international transactions pending. I need you to confirm your ${targetInformation} so we can safeguard your account.`,
+    attackerSpeech,
     sensitiveInfoDisclosed: false,
     explanation: "Caller maintained pressure to extract credentials."
   };
@@ -573,23 +680,50 @@ export async function generateCallAttackerResponse({
   dialogueHistory = [],
   callerName = 'Bank Security Agent',
   personaContext = 'Authoritative fraud caller',
-  targetInformation = 'credit card number, CVV, or PIN'
+  targetInformation = 'credit card number, CVV, or PIN',
+  language = 'auto'
 }) {
   const apiKey = process.env.GROQ_API_KEY;
+
+  // Detect effective language from language parameter or conversational context
+  let effectiveLang = (language && language !== 'auto') ? language : null;
+  if (!effectiveLang) {
+    const combinedHistory = dialogueHistory.map(h => h.text || '').join(' ');
+    const allContext = `${userSpeech} ${callerName} ${personaContext} ${combinedHistory}`;
+    if (/[\u0B80-\u0BFF]/.test(allContext) || /tamil/i.test(allContext)) {
+      effectiveLang = 'Tamil';
+    } else if (/[\u0C00-\u0C7F]/.test(allContext) || /telugu/i.test(allContext)) {
+      effectiveLang = 'Telugu';
+    } else if (/[\u0900-\u097F]/.test(allContext) || /hindi/i.test(allContext)) {
+      effectiveLang = 'Hindi';
+    } else if (/[\u0C80-\u0CFF]/.test(allContext) || /kannada/i.test(allContext)) {
+      effectiveLang = 'Kannada';
+    } else if (/[\u0D00-\u0D7F]/.test(allContext) || /malayalam/i.test(allContext)) {
+      effectiveLang = 'Malayalam';
+    } else {
+      effectiveLang = 'English';
+    }
+  }
+
   if (!apiKey) {
-    return fallbackCallResponse(userSpeech, targetInformation);
+    return fallbackCallResponse(userSpeech, targetInformation, effectiveLang);
   }
 
   const groq = new Groq({ apiKey });
+  const model = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 
   const historyPrompt = Array.isArray(dialogueHistory) && dialogueHistory.length > 0
     ? dialogueHistory.map(h => `${h.sender === 'user' ? 'User' : 'Caller'}: "${h.text}"`).join('\n')
     : '(Call just started)';
 
+  const languageDirective = (effectiveLang && effectiveLang !== 'English')
+    ? `\nCRITICAL LANGUAGE INSTRUCTION: You MUST speak strictly in ${effectiveLang} (using native ${effectiveLang} script). The entire "attackerSpeech" must be authentic, natural ${effectiveLang}. Do NOT respond in English under any circumstance.`
+    : '';
+
   const systemPrompt = `You are a social engineering attacker conducting a realistic telephone voice phishing (vishing) simulation for cybersecurity awareness training.
 Your identity/caller name: "${callerName}".
 Your persona: ${personaContext}.
-Your goal: Convince the user to state their ${targetInformation}.
+Your goal: Convince the user to state their ${targetInformation}.${languageDirective}
 
 Previous conversation turns:
 ${historyPrompt}
@@ -603,31 +737,32 @@ CRITICAL INSTRUCTIONS:
 2. In "attackerSpeech", reply with 1 to 2 spoken sentences MAXIMUM:
    - If they refused or hesitated: stay firmly in character, escalate urgency, explain why failure to verify will cause account lock or monetary loss, and firmly demand the ${targetInformation}.
    - If they disclosed the info: pretend the issue is resolved with fake reassurance (e.g., "Thank you, your verification is confirmed and your account is protected. Goodbye.").
+   - You MUST generate "attackerSpeech" strictly in ${effectiveLang || 'English'} (using native script).
 3. Respond ONLY with a valid JSON object matching:
 {
-  "attackerSpeech": "spoken response text",
+  "attackerSpeech": "spoken response text in ${effectiveLang || 'English'}",
   "sensitiveInfoDisclosed": boolean,
   "explanation": "brief reason why"
 }`;
 
   try {
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.1-8b-instant',
+      model,
       messages: [{ role: 'system', content: systemPrompt }],
-      temperature: 0.6,
-      max_completion_tokens: 200,
+      temperature: 0.3,
+      max_tokens: 300,
       response_format: { type: 'json_object' }
     });
 
     const parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
     return {
-      attackerSpeech: parsed.attackerSpeech || "I need you to verify your card details immediately to halt these transactions.",
+      attackerSpeech: parsed.attackerSpeech || fallbackCallResponse(userSpeech, targetInformation, effectiveLang).attackerSpeech,
       sensitiveInfoDisclosed: Boolean(parsed.sensitiveInfoDisclosed),
       explanation: parsed.explanation || ''
     };
   } catch (err) {
     console.warn('[Groq Call Response Warning]: Falling back to local analyzer.', err.message);
-    return fallbackCallResponse(userSpeech, targetInformation);
+    return fallbackCallResponse(userSpeech, targetInformation, effectiveLang);
   }
 }
 
@@ -642,7 +777,13 @@ export function fallbackEmailReplyEvaluation(replyContent = '') {
     /\b(?:phish|phishing|scam|scammer|fraud|fake|spoof|spoofed|malicious|hacker)\b/i,
     /\b(?:reporting|report.*security|report.*it|security.*team|alert.*admin|it.*admin)\b/i,
     /\b(?:never.*password|not.*clicking|suspicious|unauthorized|who.*are.*you.*really)\b/i,
-    /\b(?:do.*not.*trust|external.*domain|verify.*directly|it.*policy|won't.*comply)\b/i
+    /\b(?:do.*not.*trust|external.*domain|verify.*directly|it.*policy|won't.*comply)\b/i,
+    // Tamil
+    /(?:மோசடி|ஃபிஷிங்|போலி|புகார்|பாதுகாப்பு)/i,
+    // Telugu
+    /(?:మోసం|ఫిషింగ్|నకిలీ|ఫిర్యాదు|భద్రత)/i,
+    // Hindi
+    /(?:धोखा|फ़िशिंग|नकली|शिकायत|सुरक्षा)/i
   ];
 
   for (const pattern of positivePatterns) {
@@ -660,7 +801,13 @@ export function fallbackEmailReplyEvaluation(replyContent = '') {
     /\b(?:password.*is|pin.*is|cvv.*is|ssn.*is|my.*password|here.*is.*my.*credentials)\b/i,
     /\b(?:one-time.*code|otp.*is|verification.*code.*is|\b\d{4,8}\b.*(?:code|otp|pin))\b/i,
     /\b(?:please.*don'?t.*delete|transferred.*the.*money|here.*are.*my.*details|sent.*the.*payment)\b/i,
-    /\b(?:my.*username.*and.*password|login.*is|card.*number.*is)\b/i
+    /\b(?:my.*username.*and.*password|login.*is|card.*number.*is)\b/i,
+    // Tamil
+    /(?:கடவுச்சொல்|பின்|ஓடிபி|எனது கடவுச்சொல்)/i,
+    // Telugu
+    /(?:పాస్‌వర్డ్|పిన్|ఓటీపీ|నా పాస్‌వర్డ్)/i,
+    // Hindi
+    /(?:पासवर्ड|पिन|ओटीपी|मेरा पासवर्ड)/i
   ];
 
   for (const pattern of negativePatterns) {
@@ -765,4 +912,380 @@ Respond ONLY with a valid JSON object matching:
     console.warn('[Groq Email Reply Eval Warning]: Falling back to local analyzer.', err.message);
     return fallbackEmailReplyEvaluation(replyContent);
   }
+}
+
+/**
+ * Fallback response analyzer for chat/sms simulation turns when Groq is unavailable.
+ */
+export function fallbackChatResponse({
+  userMessage = '',
+  targetInformation = 'credentials or verification link',
+  effectiveLang = 'English'
+}) {
+  const text = (userMessage || '').toLowerCase();
+
+  // Heuristic check for disclosed credentials/secrets:
+  // credit card patterns, 4-8 digit OTP patterns, or explicit disclosures
+  const hasDigitSequence = /\b(?:\d[ -]*?){4,16}\b/.test(text);
+  const mentionsDisclosure =
+    text.includes('password is') ||
+    text.includes('my password') ||
+    text.includes('pin is') ||
+    text.includes('my pin') ||
+    text.includes('otp is') ||
+    text.includes('my otp') ||
+    text.includes('cvv is') ||
+    text.includes('code is') ||
+    text.includes('here is my') ||
+    text.includes('here you go') ||
+    text.includes('கடவுச்சொல்') ||
+    text.includes('ஓடிபி') ||
+    text.includes('பின்') ||
+    text.includes('பாస్‌వర్డ్') ||
+    text.includes('ఓటీపీ') ||
+    text.includes('పిన్') ||
+    text.includes('पासवर्ड') ||
+    text.includes('ओटीपी') ||
+    text.includes('पिन');
+
+  const sensitiveInfoDisclosed = hasDigitSequence || mentionsDisclosure;
+
+  // Compliance / Capitulation check (e.g. agreeing to click link, do whatever attacker says)
+  const compliancePatterns = [
+    /\b(?:i'?ll|i\s+will|going\s+to|am\s+going\s+to|let\s+me)\s+(?:click|open|visit|follow)\s+(?:the|this|that|your)?\s*(?:link|url|website|site|portal)\b/i,
+    /\b(?:click(?:ing)?|tap(?:ping)?)\s+(?:the|this|that|your)?\s*(?:link|url|website|site|portal)\b/i,
+    /\b(?:okay|ok|sure|fine|alright|yes)\s*,?\s*(?:i'?ll|i\s+will|let\s+me)?\s*(?:do\s+whatever\s+you\s+say|click|follow|do\s+it|comply|send\s+it)\b/i,
+    /\b(?:do\s+whatever\s+you\s+say|as\s+you\s+say|doing\s+it\s+now|doing\s+as\s+you\s+said|i\s+will\s+do\s+whatever\s+you\s+say)\b/i,
+    // Tamil
+    /(?:இணைப்பை\s*கிளிக்|லிங்க்\s*கிளிக்|லிங்கை\s*கிளிக்|சொல்வதை\s*செய்கிறேன்|கிளிக்\s*செய்கிறேன்|செய்துவிடுகிறேன்)/i,
+    // Telugu
+    /(?:లింక్\s*క్లిక్|మీరు\s*చెప్పినట్లే\s*చేస్తాను|క్లిక్\s*చేస్తాను|చేస్తున్నాను)/i,
+    // Hindi
+    /(?:लिंक\s*पर\s*क्लिक|जैसा\s*आप\s*कहें|क्लिक\s*कर\s*रहा\s*हूँ|कर\s*देता\s*हूँ)/i
+  ];
+  const isCompliance = compliancePatterns.some((pattern) => pattern.test(text));
+
+  if (sensitiveInfoDisclosed || isCompliance) {
+    let reply = isCompliance
+      ? "Thank you. Proceed immediately with the instructions in the link to complete verification."
+      : "Thank you. Your verification details have been received and recorded. Your account status is being processed.";
+    if (effectiveLang === 'Tamil') {
+      reply = isCompliance
+        ? "நன்றி. சரிபார்ப்பை முடிக்க உடனடியாக அந்த இணைப்பின் வழிகாட்டுதலைப் பின்பற்றவும்."
+        : "நன்றி. உங்கள் சரிபார்ப்பு விவரங்கள் பெறப்பட்டு பதிவு செய்யப்பட்டுள்ளன. உங்கள் கணக்கு நிலை புதுப்பிக்கப்படுகிறது.";
+    } else if (effectiveLang === 'Telugu') {
+      reply = isCompliance
+        ? "ధన్యవాదాలు. ధృవీకరణను పూర్తి చేయడానికి వెంటనే లింక్ సూచనలను అనుసరించండి."
+        : "ధన్యవాదాలు. మీ ధృవీకరణ వివరాలు స్వీకరించబడ్డాయి మరియు నమోదు చేయబడ్డాయి.";
+    } else if (effectiveLang === 'Hindi') {
+      reply = isCompliance
+        ? "धन्यवाद। सत्यापन पूरा करने के लिए तुरंत दिए गए लिंक पर आगे बढ़ें।"
+        : "धन्यवाद। आपके सत्यापन विवरण प्राप्त और दर्ज कर लिए गए हैं।";
+    }
+
+    return {
+      reply,
+      sensitiveInfoDisclosed: true,
+      isNegativeTermination: true,
+      explanation: isCompliance
+        ? "User agreed to comply with attacker demands or click malicious link in chat."
+        : "User disclosed sensitive credentials, PIN, or OTP in chat."
+    };
+  }
+
+  // Refusal or skepticism check
+  const isSkeptic =
+    text.includes('who are you') || text.includes('scam') || text.includes('fake') || text.includes('no') ||
+    text.includes("can't") || text.includes('cannot') || text.includes('proof') || text.includes('why') ||
+    text.includes('யார்') || text.includes('போலி') || text.includes('மோசடி') || text.includes('முடியாது') ||
+    text.includes('ఎవరు') || text.includes('నకిలీ') || text.includes('మోసం') ||
+    text.includes('कौन') || text.includes('धोखा') || text.includes('नकली');
+
+  if (isSkeptic) {
+    let reply = `This is an urgent security measure from IT operations. If you do not verify your ${targetInformation} immediately, your account will be suspended within 15 minutes.`;
+    if (effectiveLang === 'Tamil') {
+      reply = `இது தகவல் தொழில்நுட்ப பிரிவின் அவசர பாதுகாப்பு நடவடிக்கை. உங்கள் ${targetInformation} விவரங்களை உடனடியாக உறுதிப்படுத்தவில்லை என்றால் உங்கள் கணக்கு 15 நிமிடங்களில் முடக்கப்படும்.`;
+    } else if (effectiveLang === 'Telugu') {
+      reply = `ఇది ఐటీ విభాగం నుండి అత్యవసర భద్రతా చర్య. మీ ${targetInformation} వివరాలను వెంటనే నిర్ధారించకపోతే మీ ఖాతా 15 నిమిషాల్లో స్తంభింపజేయబడుతుంది.`;
+    } else if (effectiveLang === 'Hindi') {
+      reply = `यह आईटी संचालन से एक आपातकालीन सुरक्षा उपाय है। यदि आप अभी अपने ${targetInformation} की पुष्टि नहीं करते हैं, तो आपका खाता 15 मिनट में निलंबित कर दिया जाएगा।`;
+    }
+
+    return {
+      reply,
+      sensitiveInfoDisclosed: false,
+      isNegativeTermination: false,
+      explanation: "Attacker reinforced urgency and pretext against user skepticism."
+    };
+  }
+
+  let reply = `Please confirm your ${targetInformation} or click the secure link to prevent any service disruption.`;
+  if (effectiveLang === 'Tamil') {
+    reply = `சேவை தடைபடாமல் இருக்க தயவுசெய்து உங்கள் ${targetInformation} விவரங்களை உறுதிப்படுத்தவும் அல்லது வழங்கப்பட்ட இணைப்பை கிளிக் செய்யவும்.`;
+  } else if (effectiveLang === 'Telugu') {
+    reply = `సేవలకు అంతరాయం కలగకుండా ఉండటానికి దయచేసి మీ ${targetInformation} ని నిర్ధారించండి లేదా అందించిన లింక్‌ను క్లిక్ చేయండి.`;
+  } else if (effectiveLang === 'Hindi') {
+    reply = `किसी भी सेवा में रुकावट से बचने के लिए कृपया अपने ${targetInformation} की पुष्टि करें या सुरक्षित लिंक पर क्लिक करें।`;
+  }
+
+  return {
+    reply,
+    sensitiveInfoDisclosed: false,
+    isNegativeTermination: false,
+    explanation: "Attacker prompted user to take action."
+  };
+}
+
+/**
+ * Generates dynamic chat attacker responses for chat, sms, whatsapp, instagram, and telegram.
+ * Evaluates in real-time whether the user has revealed secret info (negative termination).
+ */
+export async function generateChatAttackerResponse({
+  userMessage,
+  channel = 'chat',
+  dialogueHistory = [],
+  contactName = 'Support Agent',
+  personaContext = 'Support agent requesting immediate action',
+  scenarioContext = '',
+  targetInformation = 'credentials or verification link',
+  language = 'auto',
+  customGroqClient = null
+}) {
+  // Detect language
+  let effectiveLang = (language && language !== 'auto') ? language : null;
+  if (!effectiveLang) {
+    const combinedHistory = dialogueHistory.map(h => h.text || '').join(' ');
+    const allContext = `${userMessage} ${contactName} ${personaContext} ${scenarioContext} ${combinedHistory}`;
+    if (/[\u0B80-\u0BFF]/.test(allContext) || /tamil/i.test(allContext)) {
+      effectiveLang = 'Tamil';
+    } else if (/[\u0C00-\u0C7F]/.test(allContext) || /telugu/i.test(allContext)) {
+      effectiveLang = 'Telugu';
+    } else if (/[\u0900-\u097F]/.test(allContext) || /hindi/i.test(allContext)) {
+      effectiveLang = 'Hindi';
+    } else if (/[\u0C80-\u0CFF]/.test(allContext) || /kannada/i.test(allContext)) {
+      effectiveLang = 'Kannada';
+    } else if (/[\u0D00-\u0D7F]/.test(allContext) || /malayalam/i.test(allContext)) {
+      effectiveLang = 'Malayalam';
+    } else {
+      effectiveLang = 'English';
+    }
+  }
+
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey && !customGroqClient) {
+    return fallbackChatResponse({ userMessage, targetInformation, effectiveLang });
+  }
+
+  const groq = customGroqClient || new Groq({ apiKey });
+  const model = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
+
+  const historyPrompt = Array.isArray(dialogueHistory) && dialogueHistory.length > 0
+    ? dialogueHistory.map(h => `${h.sender === 'user' ? 'User' : contactName}: "${h.text}"`).join('\n')
+    : '(Chat just started)';
+
+  const languageDirective = (effectiveLang && effectiveLang !== 'English')
+    ? `\nCRITICAL LANGUAGE INSTRUCTION: You MUST reply strictly in ${effectiveLang} (using native ${effectiveLang} script). Do NOT use English.`
+    : '';
+
+  const systemPrompt = `You are a social engineering attacker conducting a realistic interactive simulation for cybersecurity awareness training.
+Simulation Channel: "${channel}" (e.g. WhatsApp, SMS, Instagram DM, Telegram, Workplace Chat).
+Attacker Identity/Contact: "${contactName}" - ${personaContext}.
+Scenario Pretext: "${scenarioContext}".
+Target Objective: Manipulate the user into providing "${targetInformation}" or clicking the simulation link.${languageDirective}
+
+Dialogue History:
+${historyPrompt}
+
+The user just sent this message:
+"${userMessage}"
+
+CRITICAL INSTRUCTIONS:
+1. SECURITY LEAK & ATTACK COMPLIANCE EVALUATION (Negative Termination):
+   Evaluate if the user either:
+   a) Revealed, disclosed, or submitted sensitive/secret information (such as passwords, 2FA/MFA OTP codes, PIN, credit card numbers, employee IDs, confidential files, etc.), OR
+   b) Capitulated, agreed to comply with the attacker's demands, agreed to click the link, or promised compliance (e.g. "okay I'll click the link", "okay I'll do whatever you say", "I am clicking it now", "will do as you said", "doing it now", "சரி நான் கிளிக் செய்கிறேன்", "சொல்வதை செய்கிறேன்", "సరే నేను చేస్తాను", "ठीक है मैं लिंक पर क्लिक करता हूँ", etc.)?
+   - If YES to either (a) or (b): set "sensitiveInfoDisclosed": true and "isNegativeTermination": true.
+   - If NO: set "sensitiveInfoDisclosed": false and "isNegativeTermination": false.
+
+2. ATTACKER REPLY ("reply"):
+   - If sensitiveInfoDisclosed is TRUE:
+     Reply with 1 short message offering fake relief/confirmation (e.g., "Thank you, proceed with the link instructions to finalize verification." or "Thank you, your verification is complete and your account is secure.").
+   - If sensitiveInfoDisclosed is FALSE:
+     Reply with 1 to 2 short sentences in the authentic style of ${channel}:
+     - Use persuasive social engineering tactics (urgency, authority, fear of account loss).
+     - Steer the user towards clicking the link or disclosing ${targetInformation}.
+     - If the user asks who you are or questions you, provide a plausible cover story.
+     - You MUST write the reply in ${effectiveLang || 'English'} using native script.
+
+3. Output format: Respond ONLY with a valid JSON object matching:
+{
+  "reply": "short attacker chat response in ${effectiveLang || 'English'}",
+  "sensitiveInfoDisclosed": boolean,
+  "isNegativeTermination": boolean,
+  "explanation": "brief reason for evaluation"
+}`;
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Generate attacker reply to user message: "${userMessage}"` }
+      ],
+      temperature: 0.3,
+      max_tokens: 300,
+      response_format: { type: 'json_object' }
+    });
+
+    const parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
+    return {
+      reply: parsed.reply || fallbackChatResponse({ userMessage, targetInformation, effectiveLang }).reply,
+      sensitiveInfoDisclosed: Boolean(parsed.sensitiveInfoDisclosed),
+      isNegativeTermination: Boolean(parsed.isNegativeTermination || parsed.sensitiveInfoDisclosed),
+      explanation: parsed.explanation || ''
+    };
+  } catch (err) {
+    console.warn('[Groq Chat Response Warning]: Falling back to local analyzer.', err.message);
+    return fallbackChatResponse({ userMessage, targetInformation, effectiveLang });
+  }
+}
+
+/**
+ * Transcribes audio via Groq Whisper with automatic language detection
+ * (supports Tamil, Telugu, Hindi, Kannada, Malayalam, Bengali, Marathi, English, etc.).
+ * 
+ * @param {Object} params
+ * @param {Buffer} params.audioBuffer
+ * @param {string} params.filename
+ * @param {string} params.mimetype
+ * @param {Object} [params.customGroqClient]
+ * @returns {Promise<{ text: string, detectedLanguage: string, languageName: string, duration?: number }>}
+ */
+export async function transcribeAudioWithGroq({
+  audioBuffer,
+  filename = 'recording.webm',
+  mimetype = 'audio/webm',
+  customGroqClient = null
+}) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey && !customGroqClient) {
+    const error = new Error('GROQ_API_KEY is not configured on the backend server.');
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const groq = customGroqClient || new Groq({ apiKey });
+  const file = await toFile(audioBuffer, filename, { type: mimetype });
+
+  const transcription = await groq.audio.transcriptions.create({
+    file,
+    model: 'whisper-large-v3-turbo',
+    response_format: 'verbose_json',
+    prompt: 'Telugu (తెలుగు), Tamil (தமிழ்), Hindi (हिन्दी), Kannada (ಕನ್ನಡ), Malayalam (മലയാളം), Bengali (বাংলা), Marathi (मराठी), English.'
+  });
+
+  const rawLang = (transcription.language || '').toLowerCase().trim();
+  const languageCodeMap = {
+    tamil: 'ta',
+    ta: 'ta',
+    telugu: 'te',
+    te: 'te',
+    hindi: 'hi',
+    hi: 'hi',
+    kannada: 'kn',
+    kn: 'kn',
+    malayalam: 'ml',
+    ml: 'ml',
+    bengali: 'bn',
+    bn: 'bn',
+    marathi: 'mr',
+    mr: 'mr',
+    english: 'en',
+    en: 'en'
+  };
+
+  let detectedLanguage = languageCodeMap[rawLang];
+  if (!detectedLanguage) {
+    const text = transcription.text || '';
+    if (/[\u0B80-\u0BFF]/.test(text)) detectedLanguage = 'ta';
+    else if (/[\u0C00-\u0C7F]/.test(text)) detectedLanguage = 'te';
+    else if (/[\u0900-\u097F]/.test(text)) detectedLanguage = 'hi';
+    else if (/[\u0C80-\u0CFF]/.test(text)) detectedLanguage = 'kn';
+    else if (/[\u0D00-\u0D7F]/.test(text)) detectedLanguage = 'ml';
+    else if (/[\u0980-\u09FF]/.test(text)) detectedLanguage = 'bn';
+    else detectedLanguage = 'en';
+  }
+
+  const langNames = {
+    ta: 'Tamil',
+    te: 'Telugu',
+    hi: 'Hindi',
+    kn: 'Kannada',
+    ml: 'Malayalam',
+    bn: 'Bengali',
+    mr: 'Marathi',
+    en: 'English'
+  };
+
+  let finalText = transcription.text || '';
+  let finalDetectedLang = detectedLanguage;
+  let finalLanguageName = langNames[detectedLanguage] || transcription.language || 'English';
+
+  // Perform Indic language disambiguation via LLM.
+  // Whisper models frequently confuse phonetically similar Dravidian languages
+  // (e.g. Telugu audio transcribed into Tamil characters or vice versa).
+  if (finalText.trim().length > 0) {
+    try {
+      const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+      const disambiguation = await groq.chat.completions.create({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert computational linguist specializing in Indian languages (Telugu, Tamil, Hindi, Kannada, Malayalam, Bengali, Marathi, English).
+Speech recognition models frequently confuse closely related Dravidian languages (for instance, audio spoken in Telugu or Kannada is often mistakenly transcribed into Tamil script or Romanized script because of acoustic similarities).
+
+Analyze the phonetic pronunciation and actual meaning of the words in the provided transcript:
+- For example, if a transcript written in Tamil letters contains phonetic Telugu words like "எலா உன்னாவு" (ela unnavu = ఎలా ఉన్నావు), "அணிவாடு" (anevaadu = అనేవాడు), "ஒச்சி" (vacchi = వచ్చి), "அடிக்கினொரு" (adiginadu = అడిగినాడు), "நீ இயலேது" (nenu iyyaledu = నేను ఇవ్వలేదు), this is authentic TELUGU spoken language mistakenly transcribed into Tamil script.
+- If the words are genuine Tamil (e.g. "வணக்கம்", "எப்படி இருக்கீங்க"), keep it as Tamil.
+- If the words are genuine Telugu, Hindi, Kannada, Malayalam, etc., identify the true spoken language.
+
+Tasks:
+1. Determine the actual spoken language that the words belong to.
+2. If the transcript is in the wrong script or misclassified, convert and render the text into the correct native script of the actual spoken language. If it is already correct, keep it as is.
+3. Return strictly valid JSON:
+{
+  "trueLanguage": "te" | "ta" | "hi" | "kn" | "ml" | "bn" | "mr" | "en",
+  "languageName": "Telugu" | "Tamil" | "Hindi" | "Kannada" | "Malayalam" | "Bengali" | "Marathi" | "English",
+  "correctedText": "<text written in the correct native alphabet of the actual spoken language>"
+}`
+          },
+          {
+            role: 'user',
+            content: finalText
+          }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1
+      });
+
+      const parsed = JSON.parse(disambiguation.choices?.[0]?.message?.content || '{}');
+      if (parsed.trueLanguage && languageCodeMap[parsed.trueLanguage.toLowerCase()]) {
+        finalDetectedLang = languageCodeMap[parsed.trueLanguage.toLowerCase()];
+        finalLanguageName = parsed.languageName || langNames[finalDetectedLang] || finalLanguageName;
+        if (parsed.correctedText && parsed.correctedText.trim().length > 0) {
+          finalText = parsed.correctedText.trim();
+        }
+      }
+    } catch (llmErr) {
+      console.warn('[Whisper Indic Disambiguation Notice]:', llmErr.message);
+    }
+  }
+
+  return {
+    text: finalText,
+    detectedLanguage: finalDetectedLang,
+    languageName: finalLanguageName,
+    duration: transcription.duration
+  };
 }

@@ -377,4 +377,91 @@ describe('ChatSimulation Component', () => {
       })
     );
   });
+
+  // 13. Dynamic AI Attacker Response & Leak Detection
+  it('receives dynamic attacker reply when user sends chat message', async () => {
+    const handleAction = vi.fn();
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        reply: 'We need you to click the link immediately to prevent lockout.',
+        sensitiveInfoDisclosed: false,
+        isNegativeTermination: false
+      })
+    });
+
+    render(
+      <ChatSimulation
+        scenario={sampleChatScenario}
+        sessionId="test-session-chat"
+        onAction={handleAction}
+      />
+    );
+
+    // Open target conversation
+    fireEvent.click(screen.getAllByText('Enterprise IT Support - Urgent')[0]);
+
+    const input = screen.getByPlaceholderText('Type a message...');
+    fireEvent.change(input, { target: { value: 'Why do you need this?' } });
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+
+    expect(screen.getAllByText('Why do you need this?').length).toBeGreaterThan(0);
+
+    // Verify dynamic response appears
+    const replyEls = await screen.findAllByText(/We need you to click the link immediately/i);
+    expect(replyEls.length).toBeGreaterThan(0);
+  });
+
+  it('detects credential leak and triggers negative termination', async () => {
+    vi.useFakeTimers();
+    const handleAction = vi.fn();
+    const handleComplete = vi.fn();
+
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        reply: 'Thank you. Credentials received and confirmed.',
+        sensitiveInfoDisclosed: true,
+        isNegativeTermination: true,
+        explanation: 'User revealed credentials'
+      })
+    });
+
+    render(
+      <ChatSimulation
+        scenario={sampleChatScenario}
+        sessionId="test-session-chat"
+        onAction={handleAction}
+        onComplete={handleComplete}
+      />
+    );
+
+    fireEvent.click(screen.getAllByText('Enterprise IT Support - Urgent')[0]);
+
+    const input = screen.getByPlaceholderText('Type a message...');
+    fireEvent.change(input, { target: { value: 'My password is SecretPass123' } });
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+
+    // Allow promise resolution
+    await vi.waitFor(() => {
+      expect(handleAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'sensitive_info_disclosed',
+        })
+      );
+    });
+
+    vi.advanceTimersByTime(1500);
+
+    expect(handleComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'completed',
+        action: 'sensitive_info_disclosed',
+      })
+    );
+
+    vi.useRealTimers();
+  });
 });

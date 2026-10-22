@@ -254,6 +254,21 @@ export default function VoiceCallSimulation({
       utterance.rate = 1.0;
       utterance.pitch = 0.95; // Authoritative tone
 
+      // Multilingual voice synthesis tag for Indian regional languages
+      if (/[\u0B80-\u0BFF]/.test(text) || scenario?.language === 'Tamil') {
+        utterance.lang = 'ta-IN';
+      } else if (/[\u0C00-\u0C7F]/.test(text) || scenario?.language === 'Telugu') {
+        utterance.lang = 'te-IN';
+      } else if (/[\u0900-\u097F]/.test(text) || scenario?.language === 'Hindi') {
+        utterance.lang = 'hi-IN';
+      } else if (/[\u0C80-\u0CFF]/.test(text) || scenario?.language === 'Kannada') {
+        utterance.lang = 'kn-IN';
+      } else if (/[\u0D00-\u0D7F]/.test(text) || scenario?.language === 'Malayalam') {
+        utterance.lang = 'ml-IN';
+      } else {
+        utterance.lang = 'en-US';
+      }
+
       utterance.onstart = () => {
         setIsAttackerSpeaking(true);
         isAttackerSpeakingRef.current = true;
@@ -295,7 +310,16 @@ export default function VoiceCallSimulation({
         recognition.continuous = true;
         // Stream interim results as user speaks
         recognition.interimResults = true;
-        recognition.lang = 'en-US';
+        // Configure language for SpeechRecognition based on scenario language / script
+        if (/[\u0B80-\u0BFF]/.test(scenario?.title || scenario?.callerSpeech || '') || scenario?.language === 'Tamil') {
+          recognition.lang = 'ta-IN';
+        } else if (/[\u0C00-\u0C7F]/.test(scenario?.title || scenario?.callerSpeech || '') || scenario?.language === 'Telugu') {
+          recognition.lang = 'te-IN';
+        } else if (/[\u0900-\u097F]/.test(scenario?.title || scenario?.callerSpeech || '') || scenario?.language === 'Hindi') {
+          recognition.lang = 'hi-IN';
+        } else {
+          recognition.lang = 'en-US';
+        }
 
         recognition.onstart = () => {
           setIsListening(true);
@@ -511,6 +535,13 @@ export default function VoiceCallSimulation({
     setIsAiResponding(true);
     isAiRespondingRef.current = true;
 
+    // Detect active call language (Tamil, Telugu, Hindi, or English)
+    const activeCallLanguage = scenario?.language || callData?.language || (
+      /[\u0B80-\u0BFF]/.test(callData?.callerSpeech || '') || /[\u0B80-\u0BFF]/.test(scenario?.title || '') ? 'Tamil' :
+      /[\u0C00-\u0C7F]/.test(callData?.callerSpeech || '') || /[\u0C00-\u0C7F]/.test(scenario?.title || '') ? 'Telugu' :
+      /[\u0900-\u097F]/.test(callData?.callerSpeech || '') || /[\u0900-\u097F]/.test(scenario?.title || '') ? 'Hindi' : 'English'
+    );
+
     try {
       const res = await fetch('/api/scenarios/call/respond', {
         method: 'POST',
@@ -520,12 +551,19 @@ export default function VoiceCallSimulation({
           dialogueHistory: updatedHistory,
           callerName: callData.callerName,
           personaContext: callData.personaContext,
-          targetInformation: callData.targetInformation
+          targetInformation: callData.targetInformation,
+          language: activeCallLanguage
         })
       });
 
       const data = await res.json();
-      const attackerReply = data.attackerSpeech || "I need your credentials confirmed immediately to prevent account suspension.";
+      const regionalFallbacks = {
+        Tamil: 'உங்கள் கணக்கு முடக்கப்படாமல் இருக்க உடனடியாக விவரங்களை சரிபார்க்கவும்.',
+        Telugu: 'మీ ఖాతా రద్దు కాకుండా ఉండటానికి వెంటనే మీ వివరాలను ధృవీకరించండి.',
+        Hindi: 'अपना खाता ब्लॉक होने से बचाने के लिए कृपया तुरंत विवरण सत्यापित करें।'
+      };
+      const defaultFallback = regionalFallbacks[activeCallLanguage] || "I need your credentials confirmed immediately to prevent account suspension.";
+      const attackerReply = data.attackerSpeech || defaultFallback;
       const sensitiveDisclosed = Boolean(data.sensitiveInfoDisclosed || isExplicitLeak);
 
       setDialogueHistory(prev => [
@@ -542,8 +580,8 @@ export default function VoiceCallSimulation({
 
       // Check for Negative Outcome: Sensitive Information Disclosed
       if (sensitiveDisclosed) {
-        emitEvent('sensitive_info_disclosed', { userSpeech: trimmed, reason: data.explanation || 'Disclosed credentials to imposter caller.' });
-        emitEvent('credential_submitted', { channel: 'call', method: 'spoken_or_keypad' });
+        emitEvent('sensitive_info_disclosed', { userSpeech: trimmed, reason: data.explanation || 'Disclosed credentials to imposter caller.', channel: 'call', method: 'spoken_voice' });
+        emitEvent('credential_submitted', { channel: 'call', method: 'spoken_voice' });
 
         setTimeout(() => {
           setCallState('ended');
@@ -564,7 +602,8 @@ export default function VoiceCallSimulation({
       speakText(fallbackReply);
 
       if (isExplicitLeak) {
-        emitEvent('credential_submitted', { channel: 'call' });
+        emitEvent('sensitive_info_disclosed', { userSpeech: trimmed, reason: 'Disclosed credentials to imposter caller.', channel: 'call', method: 'spoken_voice' });
+        emitEvent('credential_submitted', { channel: 'call', method: 'spoken_voice' });
         setTimeout(() => {
           setCallState('ended');
           if (typeof onComplete === 'function') {

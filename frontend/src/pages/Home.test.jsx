@@ -304,4 +304,38 @@ describe('Home Page Component', () => {
 
     delete window.SpeechRecognition;
   });
+
+  // Test 14: Language selector configures speech recognition language tag
+  it('allows selecting Indian languages and configures speech recognition lang tag to ta-IN', () => {
+    let mockInstance = null;
+    class MockSpeechRecognition {
+      constructor() {
+        this.lang = '';
+        this.onstart = null;
+        mockInstance = this;
+      }
+      start() {
+        if (this.onstart) this.onstart();
+      }
+      stop() {}
+      abort() {}
+    }
+
+    window.SpeechRecognition = MockSpeechRecognition;
+
+    render(<Home onGenerateScenario={mockOnGenerateScenario} />);
+    const langSelect = screen.getByTestId('language-select');
+    expect(langSelect).toBeInTheDocument();
+
+    // Select Tamil
+    fireEvent.change(langSelect, { target: { value: 'ta' } });
+    expect(langSelect.value).toBe('ta');
+
+    const voiceBtn = screen.getByTestId('voice-input-btn');
+    fireEvent.click(voiceBtn);
+
+    expect(mockInstance.lang).toBe('ta-IN');
+
+    delete window.SpeechRecognition;
+  });
 });

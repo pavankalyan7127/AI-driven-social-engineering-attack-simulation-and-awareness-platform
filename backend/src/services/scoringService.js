@@ -184,6 +184,29 @@ export function calculateSecurityScore(events = [], session = {}) {
   let totalPenalty = 0;
   const factors = [];
 
+function getContextualFactorDescription(category, channel, defaultDescription) {
+  const norm = (channel || '').toLowerCase();
+  if (category === 'simulated_credentials_submitted') {
+    if (norm === 'call') {
+      return 'Verbally disclosed credentials or sensitive information during the telephone call.';
+    }
+    if (['chat', 'sms', 'whatsapp', 'instagram', 'telegram'].includes(norm)) {
+      return 'Disclosed sensitive credentials or security details in a message.';
+    }
+    if (norm === 'email') {
+      return 'Disclosed sensitive credentials via email reply.';
+    }
+    return defaultDescription;
+  }
+  if (category === 'threat_reported' && norm === 'call') {
+    return 'Reported the suspicious phone call as a voice phishing (vishing) threat.';
+  }
+  if (category === 'safe_exit' && norm === 'call') {
+    return 'Safely hung up and terminated the call without complying with attacker demands.';
+  }
+  return defaultDescription;
+}
+
   for (const [category, rule] of Object.entries(SCORING_CONFIG.penalties)) {
     const rawCount = occurrencesByCategory[category] || 0;
     if (rawCount > 0) {
@@ -195,7 +218,7 @@ export function calculateSecurityScore(events = [], session = {}) {
         category,
         eventCount: counted,
         scoreImpact: impact,
-        description: rule.description
+        description: getContextualFactorDescription(category, session.channel, rule.description)
       });
     }
   }
@@ -214,7 +237,7 @@ export function calculateSecurityScore(events = [], session = {}) {
         category,
         eventCount: counted,
         scoreImpact: impact,
-        description: rule.description
+        description: getContextualFactorDescription(category, session.channel, rule.description)
       });
     }
   }

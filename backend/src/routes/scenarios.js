@@ -4,7 +4,10 @@ import {
   generateScenarioWithGroq,
   generateCallAttackerResponse,
   evaluateEmailReplyWithGroq,
-  fallbackEmailReplyEvaluation
+  fallbackEmailReplyEvaluation,
+  generateChatAttackerResponse,
+  fallbackChatResponse,
+  transcribeAudioWithGroq
 } from '../services/groqService.js';
 
 const router = express.Router();
@@ -28,6 +31,14 @@ const upload = multer({
       err.code = 'INVALID_MIME_TYPE';
       cb(err, false);
     }
+  }
+});
+
+// Multer in-memory audio upload handler (up to 25 MB)
+const uploadAudio = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 25 * 1024 * 1024
   }
 });
 
@@ -60,7 +71,7 @@ router.post('/generate', (req, res, next) => {
   });
 }, async (req, res) => {
   try {
-    const { prompt, channel } = req.body;
+    const { prompt, channel, language } = req.body;
 
     // 1. Validate prompt
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
@@ -111,6 +122,7 @@ router.post('/generate', (req, res, next) => {
     const result = await generateScenarioWithGroq({
       prompt: trimmedPrompt,
       channel: normalizedChannel,
+      language: language ? String(language).trim() : 'auto',
       files: req.files,
       hasImages
     });
@@ -120,6 +132,7 @@ router.post('/generate', (req, res, next) => {
       scenario: result.scenario,
       sessionId: result.sessionId,
       modelUsed: result.modelUsed,
+      language: result.language,
       imageAnalysis: result.imageAnalysis
     });
 
@@ -147,7 +160,7 @@ router.post('/generate', (req, res, next) => {
  */
 router.post('/call/respond', async (req, res) => {
   try {
-    const { userSpeech, dialogueHistory, callerName, personaContext, targetInformation } = req.body;
+    const { userSpeech, dialogueHistory, callerName, personaContext, targetInformation, language } = req.body;
 
     if (!userSpeech || typeof userSpeech !== 'string') {
       return res.status(400).json({
@@ -161,7 +174,8 @@ router.post('/call/respond', async (req, res) => {
       dialogueHistory: Array.isArray(dialogueHistory) ? dialogueHistory : [],
       callerName: callerName || 'Fraud Investigation Agent',
       personaContext: personaContext || 'Authoritative fraud investigator demanding immediate verification.',
-      targetInformation: targetInformation || 'credit card number, CVV, or PIN'
+      targetInformation: targetInformation || 'credit card number, CVV, or PIN',
+      language
     });
 
     return res.status(200).json({
@@ -234,6 +248,115 @@ router.post('/email/evaluate-reply', async (req, res) => {
       confidence: fallback.confidence,
       status: fallback.decision === 'positive_termination' ? 'safe_exit' : (fallback.decision === 'negative_termination' ? 'completed' : null),
       action: fallback.decision === 'positive_termination' ? 'threat_confronted' : (fallback.decision === 'negative_termination' ? 'risky_reply_sent' : 'reply_sent')
+    });
+  }
+});
+
+/**
+ * POST /api/scenarios/chat/respond
+ * Dynamically generates attacker replies for interactive chat and SMS simulations
+ * (chat, sms, whatsapp, instagram, telegram) and checks for negative termination (sensitive credential leak).
+ */
+router.post('/chat/respond', async (req, res) => {
+  try {
+    const {
+      userMessage,
+      channel,
+      dialogueHistory,
+      contactName,
+      personaContext,
+      scenarioContext,
+      targetInformation,
+      language
+    } = req.body;
+
+    if (!userMessage || typeof userMessage !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid "userMessage" in request body.'
+      });
+    }
+
+    const result = await generateChatAttackerResponse({
+      userMessage,
+      channel: channel || 'chat',
+      dialogueHistory: Array.isArray(dialogueHistory) ? dialogueHistory : [],
+      contactName: contactName || 'Support Agent',
+      personaContext: personaContext || 'Support agent requesting immediate action',
+      scenarioContext: scenarioContext || '',
+      targetInformation: targetInformation || 'credentials or verification link',
+      language
+    });
+
+    return res.status(200).json({
+      success: true,
+      reply: result.reply,
+      sensitiveInfoDisclosed: result.sensitiveInfoDisclosed,
+      isNegativeTermination: result.isNegativeTermination,
+      status: result.isNegativeTermination ? 'completed' : null,
+      action: result.isNegativeTermination ? 'sensitive_info_disclosed' : 'message_received',
+      explanation: result.explanation
+    });
+  } catch (err) {
+    console.error('[Chat Respond Route Error]:', err.message);
+    const fallback = fallbackChatResponse({
+      userMessage: req.body?.userMessage,
+      targetInformation: req.body?.targetInformation,
+      effectiveLang: req.body?.language || 'English'
+    });
+    return res.status(200).json({
+      success: true,
+      reply: fallback.reply,
+      sensitiveInfoDisclosed: fallback.sensitiveInfoDisclosed,
+      isNegativeTermination: fallback.isNegativeTermination,
+      status: fallback.isNegativeTermination ? 'completed' : null,
+      action: fallback.isNegativeTermination ? 'sensitive_info_disclosed' : 'message_received',
+      explanation: fallback.explanation
+    });
+  }
+});
+
+/**
+ * POST /api/scenarios/voice/transcribe
+ * Multilingual speech-to-text with automatic language detection powered by Groq Whisper.
+ */
+router.post('/voice/transcribe', (req, res, next) => {
+  uploadAudio.single('audio')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        success: false,
+        error: err.message || 'Audio upload error'
+      });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or empty audio file in request.'
+      });
+    }
+
+    const result = await transcribeAudioWithGroq({
+      audioBuffer: req.file.buffer,
+      filename: req.file.originalname || 'speech_sample.webm',
+      mimetype: req.file.mimetype || 'audio/webm'
+    });
+
+    return res.status(200).json({
+      success: true,
+      text: result.text,
+      detectedLanguage: result.detectedLanguage,
+      languageName: result.languageName,
+      duration: result.duration
+    });
+  } catch (err) {
+    console.error('[Voice Transcribe Error]:', err.message);
+    return res.status(err.statusCode || 500).json({
+      success: false,
+      error: err.message || 'Audio transcription failed.'
     });
   }
 });

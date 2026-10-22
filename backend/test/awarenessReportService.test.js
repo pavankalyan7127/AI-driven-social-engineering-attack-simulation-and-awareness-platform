@@ -68,6 +68,43 @@ describe('AI Awareness and Remediation Report Service & API Tests', () => {
       expect(sanitized[3].metadata.indicatorsReported).toContain('credentialHarvestLink');
     });
 
+    it('generates accurate spoken voice description for call simulation events', () => {
+      const callEvents = [
+        {
+          eventType: 'call_answered',
+          timestamp: new Date().toISOString(),
+          metadata: { channel: 'call' }
+        },
+        {
+          eventType: 'credential_submitted',
+          timestamp: new Date().toISOString(),
+          metadata: {
+            channel: 'call',
+            method: 'spoken_voice',
+            field: 'credit_card',
+            userSpeech: '4532 8920 1234 5678'
+          }
+        },
+        {
+          eventType: 'sensitive_info_disclosed',
+          timestamp: new Date().toISOString(),
+          metadata: {
+            channel: 'call',
+            method: 'spoken_voice',
+            data: 'cvv 482'
+          }
+        }
+      ];
+
+      const sanitized = sanitizeEventsForReport(callEvents, 'call');
+      expect(sanitized).toHaveLength(3);
+      expect(sanitized[0].description).toBe('User answered the incoming voice call.');
+      expect(sanitized[1].description).toBe('User verbally disclosed sensitive credentials or security details over the telephone call.');
+      expect(sanitized[2].description).toBe('User verbally disclosed sensitive credentials or security details over the telephone call.');
+      expect(JSON.stringify(sanitized)).not.toContain('deceptive form');
+      expect(JSON.stringify(sanitized)).not.toContain('4532');
+    });
+
     it('handles empty or malformed events gracefully', () => {
       expect(sanitizeEventsForReport([])).toEqual([]);
       expect(sanitizeEventsForReport(null)).toEqual([]);

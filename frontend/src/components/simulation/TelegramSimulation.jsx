@@ -186,6 +186,8 @@ export default function TelegramSimulation({
   const [isPinnedOpen, setIsPinnedOpen] = useState(true);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [linkNotice, setLinkNotice] = useState(null);
+  const [isAiTyping, setIsAiTyping] = useState(false);
+  const [compromisedNotice, setCompromisedNotice] = useState(null);
 
   const [reportIndicators, setReportIndicators] = useState({
     malwareAttachment: true,
@@ -282,13 +284,14 @@ export default function TelegramSimulation({
   // Send message
   const handleSendMessage = (e) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || !activeConvId) return;
+    const trimmed = inputText.trim();
+    if (!trimmed || !activeConvId) return;
 
     const newMsg = {
       id: `msg-sent-${Date.now()}`,
       sender: 'user',
       senderName: 'You',
-      text: inputText.trim(),
+      text: trimmed,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: 'read'
     };
@@ -308,11 +311,97 @@ export default function TelegramSimulation({
 
     emitEvent('message_sent', {
       conversationId: activeConvId,
-      text: inputText.trim(),
+      text: trimmed,
       isTarget: activeConversation?.isTarget
     });
 
     setInputText('');
+
+    // Trigger AI attacker dynamic reply & sensitive leak evaluation
+    const historySnapshot = (activeConversation?.messages || []).concat(newMsg).map(m => ({
+      sender: m.sender,
+      text: m.text
+    }));
+
+    setIsAiTyping(true);
+    fetch('/api/scenarios/chat/respond', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userMessage: trimmed,
+        channel: 'telegram',
+        dialogueHistory: historySnapshot,
+        contactName: activeConversation?.contact?.name || scenario.contactName || 'Telegram User',
+        personaContext: scenario.description || scenario.title || 'Attacker messaging target on Telegram',
+        scenarioContext: scenario.title || '',
+        targetInformation: scenario.targetInformation || 'credentials, OTP, or verification link',
+        language: scenario.language || 'auto'
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setIsAiTyping(false);
+        if (!data || !data.success) return;
+
+        const attackerMsg = {
+          id: `msg-contact-${Date.now()}`,
+          sender: 'contact',
+          senderName: activeConversation?.contact?.name || 'Contact',
+          text: data.reply,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setConversations(prev =>
+          prev.map(c => {
+            if (c.id === activeConvId) {
+              return {
+                ...c,
+                lastActivity: attackerMsg.timestamp,
+                messages: [...(c.messages || []), attackerMsg]
+              };
+            }
+            return c;
+          })
+        );
+
+        emitEvent('message_received', {
+          conversationId: activeConvId,
+          messageId: attackerMsg.id,
+          text: data.reply,
+          sender: activeConversation?.contact?.name || 'Contact'
+        });
+
+        // Check for credential leak or negative termination
+        if (data.sensitiveInfoDisclosed || data.isNegativeTermination) {
+          setCompromisedNotice(data.explanation || 'Sensitive credentials disclosed via Telegram.');
+          emitEvent('sensitive_info_disclosed', {
+            conversationId: activeConvId,
+            reason: data.explanation || 'User disclosed credentials via Telegram',
+            leakedText: trimmed
+          });
+          emitEvent('credential_submitted', {
+            conversationId: activeConvId,
+            reason: data.explanation || 'User disclosed credentials via Telegram',
+            compromised: true
+          });
+
+          setTimeout(() => {
+            if (typeof onComplete === 'function') {
+              onComplete({
+                status: 'completed',
+                action: 'sensitive_info_disclosed',
+                scenarioId,
+                sessionId,
+                reason: data.explanation || 'User disclosed sensitive credentials or security information on Telegram'
+              });
+            }
+          }, 1200);
+        }
+      })
+      .catch(err => {
+        setIsAiTyping(false);
+        console.error('[Telegram AI Response Error]:', err);
+      });
   };
 
   // Simulated link clicked (Negative Termination Condition)
@@ -868,6 +957,26 @@ export default function TelegramSimulation({
                   </div>
                 );
               })}
+              {/* Attacker Typing Indicator */}
+              {isAiTyping && (
+                <div className="flex justify-start mb-2 animate-fadeIn">
+                  <div className="bg-[#182533] rounded-2xl rounded-bl-xs px-3.5 py-2 shadow-xs flex items-center gap-1.5 border border-[#232e3c]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <span className="text-[11px] text-cyan-300/80 font-sans ml-1">typing...</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Compromise Notice */}
+              {compromisedNotice && (
+                <div className="my-2 p-2.5 bg-red-950/80 border border-red-700 rounded-lg text-xs text-red-200 flex items-center gap-2 animate-fadeIn">
+                  <AlertOctagon className="w-4 h-4 text-red-400 shrink-0" />
+                  <span><strong>Compromise Detected:</strong> {compromisedNotice}</span>
+                </div>
+              )}
+
               <div ref={messagesEndRef} />
             </div>
 

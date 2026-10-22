@@ -178,6 +178,10 @@ export default function SmsSimulation({
   const [reportNotes, setReportNotes] = useState('');
   const [threatReportedConfirmed, setThreatReportedConfirmed] = useState(false);
 
+  // Dynamic AI reply & leak evaluation states
+  const [isAiTyping, setIsAiTyping] = useState(false);
+  const [compromisedNotice, setCompromisedNotice] = useState(null);
+
   // 3-dot options menu state
   const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
   const optionsMenuRef = useRef(null);
@@ -316,6 +320,91 @@ export default function SmsSimulation({
     setInputText('');
     setShowEmojiPicker(false);
     if (inputRef.current) inputRef.current.focus();
+
+    // Trigger AI attacker dynamic reply & sensitive leak evaluation
+    const historySnapshot = (activeConversation?.messages || []).concat(newMessage).map(m => ({
+      sender: m.sender,
+      text: m.text
+    }));
+
+    setIsAiTyping(true);
+    fetch('/api/scenarios/chat/respond', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userMessage: trimmed,
+        channel: 'sms',
+        dialogueHistory: historySnapshot,
+        contactName: activeConversation?.sender?.name || scenario.senderName || 'SMS Sender',
+        personaContext: scenario.description || scenario.title || 'Attacker sending fraudulent SMS alert',
+        scenarioContext: scenario.title || '',
+        targetInformation: scenario.targetInformation || 'credentials, OTP, or verification link',
+        language: scenario.language || 'auto'
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setIsAiTyping(false);
+        if (!data || !data.success) return;
+
+        const attackerMsg = {
+          id: `sms-contact-${Date.now()}`,
+          sender: 'contact',
+          text: data.reply,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setConversations(prev =>
+          prev.map(c => {
+            if (c.id === activeConvId) {
+              return {
+                ...c,
+                lastActivity: 'Just now',
+                messages: [...(c.messages || []), attackerMsg]
+              };
+            }
+            return c;
+          })
+        );
+
+        emitEvent('message_received', {
+          conversationId: activeConvId,
+          messageId: attackerMsg.id,
+          text: data.reply,
+          sender: activeConversation?.sender?.name || 'SMS Sender'
+        });
+
+        // Check for credential leak or negative termination
+        if (data.sensitiveInfoDisclosed || data.isNegativeTermination) {
+          setCompromisedNotice(data.explanation || 'Sensitive credentials disclosed via SMS.');
+          emitEvent('sensitive_info_disclosed', {
+            conversationId: activeConvId,
+            reason: data.explanation || 'User disclosed credentials via SMS',
+            leakedText: trimmed
+          });
+          emitEvent('credential_submitted', {
+            conversationId: activeConvId,
+            reason: data.explanation || 'User disclosed credentials via SMS',
+            compromised: true
+          });
+
+          setTimeout(() => {
+            if (typeof onComplete === 'function') {
+              onComplete({
+                status: 'completed',
+                action: 'sensitive_info_disclosed',
+                scenarioId,
+                sessionId,
+                reason: data.explanation || 'User disclosed sensitive credentials or security information via SMS'
+              });
+            }
+          }, 1200);
+        }
+      })
+      .catch(err => {
+        setIsAiTyping(false);
+        console.error('[SMS AI Response Error]:', err);
+      });
   };
 
   // Emoji picker insertion
@@ -922,6 +1011,26 @@ export default function SmsSimulation({
                 </div>
               );
             })}
+
+            {/* SMS Attacker Typing Indicator */}
+            {isAiTyping && (
+              <div className="flex justify-start mb-2 animate-fadeIn">
+                <div className="bg-[#e9e9eb] rounded-2xl rounded-bl-xs px-3 py-1.5 shadow-2xs flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span className="text-[10px] text-gray-500 font-sans ml-1">typing...</span>
+                </div>
+              </div>
+            )}
+
+            {/* Compromise Notice */}
+            {compromisedNotice && (
+              <div className="my-2 p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2 animate-fadeIn">
+                <AlertOctagon className="w-4 h-4 text-red-600 shrink-0" />
+                <span><strong>Compromise Detected:</strong> {compromisedNotice}</span>
+              </div>
+            )}
 
             <div ref={messagesEndRef} />
           </div>

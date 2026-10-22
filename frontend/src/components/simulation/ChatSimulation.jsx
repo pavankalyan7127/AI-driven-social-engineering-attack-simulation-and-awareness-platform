@@ -148,6 +148,10 @@ export default function ChatSimulation({
   const [reportNotes, setReportNotes] = useState('');
   const [threatReportedConfirmed, setThreatReportedConfirmed] = useState(false);
 
+  // Dynamic AI reply & compromise states
+  const [isAiTyping, setIsAiTyping] = useState(false);
+  const [compromisedNotice, setCompromisedNotice] = useState(null);
+
   // Options 3-dot dropdown menu state
   const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
   const optionsMenuRef = useRef(null);
@@ -298,6 +302,91 @@ export default function ChatSimulation({
     setInputText('');
     setShowEmojiPicker(false);
     if (inputRef.current) inputRef.current.focus();
+
+    // Trigger AI attacker dynamic response & sensitive leak evaluation
+    const historySnapshot = (activeConversation?.messages || []).concat(newMessage).map(m => ({
+      sender: m.sender,
+      text: m.text
+    }));
+
+    setIsAiTyping(true);
+    fetch('/api/scenarios/chat/respond', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userMessage: trimmed,
+        channel: 'chat',
+        dialogueHistory: historySnapshot,
+        contactName: activeConversation?.contact?.name || scenario.contactName || 'External Contact',
+        personaContext: scenario.description || scenario.title || 'Attacker posing as support or authority',
+        scenarioContext: scenario.title || '',
+        targetInformation: scenario.targetInformation || 'credentials, passwords, or verification links',
+        language: scenario.language || 'auto'
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setIsAiTyping(false);
+        if (!data || !data.success) return;
+
+        const attackerMsg = {
+          id: `msg-attacker-${Date.now()}`,
+          sender: 'contact',
+          text: data.reply,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setConversations(prev =>
+          prev.map(c => {
+            if (c.id === activeConvId) {
+              return {
+                ...c,
+                lastActivity: 'Just now',
+                messages: [...(c.messages || []), attackerMsg]
+              };
+            }
+            return c;
+          })
+        );
+
+        emitEvent('message_received', {
+          conversationId: activeConvId,
+          messageId: attackerMsg.id,
+          text: data.reply,
+          sender: activeConversation?.contact?.name || 'Contact'
+        });
+
+        // If sensitive info was disclosed or negative termination condition was met:
+        if (data.sensitiveInfoDisclosed || data.isNegativeTermination) {
+          setCompromisedNotice(data.explanation || 'Sensitive credentials disclosed in conversation.');
+          emitEvent('sensitive_info_disclosed', {
+            conversationId: activeConvId,
+            reason: data.explanation || 'User disclosed sensitive credentials in chat',
+            leakedText: trimmed
+          });
+          emitEvent('credential_submitted', {
+            conversationId: activeConvId,
+            reason: data.explanation || 'User disclosed sensitive credentials in chat',
+            compromised: true
+          });
+
+          setTimeout(() => {
+            if (typeof onComplete === 'function') {
+              onComplete({
+                status: 'completed',
+                action: 'sensitive_info_disclosed',
+                scenarioId,
+                sessionId,
+                reason: data.explanation || 'User disclosed sensitive credentials or security information in chat'
+              });
+            }
+          }, 1200);
+        }
+      })
+      .catch(err => {
+        setIsAiTyping(false);
+        console.error('[Chat AI Response Error]:', err);
+      });
   };
 
   // Emoji picker insertion
@@ -916,6 +1005,26 @@ export default function ChatSimulation({
               </div>
             );
           })}
+
+          {/* Attacker Typing Indicator */}
+          {isAiTyping && (
+            <div className="flex justify-start mb-3 animate-fadeIn">
+              <div className="bg-white border border-gray-200 rounded-2xl rounded-bl-xs px-3.5 py-2 shadow-2xs flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                <span className="text-[11px] text-gray-400 font-sans ml-1">typing...</span>
+              </div>
+            </div>
+          )}
+
+          {/* Security Compromise Notice */}
+          {compromisedNotice && (
+            <div className="my-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2 animate-fadeIn">
+              <AlertOctagon className="w-4 h-4 text-red-600 shrink-0" />
+              <span><strong>Security Compromise Detected:</strong> {compromisedNotice}</span>
+            </div>
+          )}
 
           <div ref={messagesEndRef} />
         </div>

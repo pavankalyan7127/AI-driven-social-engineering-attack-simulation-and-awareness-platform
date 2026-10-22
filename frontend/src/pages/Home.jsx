@@ -10,8 +10,21 @@ import {
   Info,
   Cpu,
   Mic,
-  MicOff
+  MicOff,
+  Languages
 } from 'lucide-react';
+
+export const SUPPORTED_LANGUAGES = [
+  { code: 'auto', label: 'Auto Detect', bcp47: 'en-US' },
+  { code: 'en', label: 'English', bcp47: 'en-IN' },
+  { code: 'ta', label: 'தமிழ் (Tamil)', bcp47: 'ta-IN' },
+  { code: 'te', label: 'తెలుగు (Telugu)', bcp47: 'te-IN' },
+  { code: 'hi', label: 'हिन्दी (Hindi)', bcp47: 'hi-IN' },
+  { code: 'kn', label: 'ಕನ್ನಡ (Kannada)', bcp47: 'kn-IN' },
+  { code: 'ml', label: 'മലയാളം (Malayalam)', bcp47: 'ml-IN' },
+  { code: 'bn', label: 'বাংলা (Bengali)', bcp47: 'bn-IN' },
+  { code: 'mr', label: 'मराठी (Marathi)', bcp47: 'mr-IN' }
+];
 
 const PRESETS = [
   {
@@ -55,24 +68,154 @@ export default function Home({
   const [errorMessage, setErrorMessage] = useState(null);
   const [fileError, setFileError] = useState(null);
   const [isListening, setIsListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState(null);
+  const [selectedLanguage, setSelectedLanguage] = useState(SUPPORTED_LANGUAGES[0].code);
 
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioStreamRef = useRef(null);
+  const audioChunksRef = useRef([]);
   const speechBaseTextRef = useRef('');
+
+  const currentLangConfig = SUPPORTED_LANGUAGES.find((l) => l.code === selectedLanguage) || SUPPORTED_LANGUAGES[0];
+
+  // Helper to safely stop all ongoing recording mechanisms (SpeechRecognition & MediaRecorder)
+  const stopAllRecording = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (_) {}
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (_) {}
+    }
+    if (audioStreamRef.current) {
+      try {
+        audioStreamRef.current.getTracks().forEach((track) => track.stop());
+      } catch (_) {}
+      audioStreamRef.current = null;
+    }
+    setIsListening(false);
+  };
 
   // Clean up any ongoing speech recognition on unmount
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch (_) {}
-      }
+      stopAllRecording();
     };
   }, []);
 
-  const toggleListening = () => {
+  const toggleListening = async () => {
+    if (isTranscribing) return;
+
+    if (isListening) {
+      stopAllRecording();
+      return;
+    }
+
+    speechBaseTextRef.current = prompt.trim();
+    setVoiceNotice(null);
+    setErrorMessage(null);
+
+    // MODE 1: Auto Detect Language Mode (uses MediaRecorder + Groq Whisper multilingual transcription)
+    if (
+      selectedLanguage === 'auto' &&
+      typeof navigator !== 'undefined' &&
+      navigator.mediaDevices &&
+      typeof navigator.mediaDevices.getUserMedia === 'function' &&
+      typeof MediaRecorder !== 'undefined'
+    ) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStreamRef.current = stream;
+
+        const mimeType = (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported('audio/webm'))
+          ? 'audio/webm'
+          : (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported('audio/mp4'))
+          ? 'audio/mp4'
+          : '';
+
+        const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+        mediaRecorderRef.current = recorder;
+        audioChunksRef.current = [];
+
+        recorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        recorder.onstop = async () => {
+          if (audioStreamRef.current) {
+            try {
+              audioStreamRef.current.getTracks().forEach((t) => t.stop());
+            } catch (_) {}
+            audioStreamRef.current = null;
+          }
+
+          const chunks = audioChunksRef.current;
+          if (chunks.length === 0) {
+            setIsListening(false);
+            return;
+          }
+
+          const audioBlob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+          if (audioBlob.size < 500) {
+            setIsListening(false);
+            return;
+          }
+
+          setIsTranscribing(true);
+          setVoiceNotice('Auto-detecting language & transcribing audio...');
+
+          try {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.webm');
+
+            const res = await fetch('/api/scenarios/voice/transcribe', {
+              method: 'POST',
+              body: formData
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success && data.text) {
+              const prefix = speechBaseTextRef.current ? speechBaseTextRef.current + ' ' : '';
+              const newPrompt = (prefix + data.text.trim()).slice(0, 2000);
+              setPrompt(newPrompt);
+
+              if (data.detectedLanguage) {
+                setSelectedLanguage(data.detectedLanguage);
+              }
+              setVoiceNotice(`Detected: ${data.languageName || 'Language'} • Transcribed successfully`);
+              setTimeout(() => setVoiceNotice(null), 4000);
+            } else {
+              setVoiceNotice(data.error || 'Could not recognize speech. Please try again.');
+              setTimeout(() => setVoiceNotice(null), 5000);
+            }
+          } catch (netErr) {
+            console.error('[Voice Transcribe Error]:', netErr);
+            setVoiceNotice('Network error while transcribing audio.');
+            setTimeout(() => setVoiceNotice(null), 5000);
+          } finally {
+            setIsTranscribing(false);
+            setIsListening(false);
+          }
+        };
+
+        recorder.start(250);
+        setIsListening(true);
+        return;
+      } catch (err) {
+        console.warn('[MediaRecorder Not Available/Denied, Falling back to SpeechRecognition]:', err.message);
+        // Fall through to SpeechRecognition fallback below
+      }
+    }
+
+    // MODE 2: Explicit Individual Language Selected (Real-Time Web Speech Recognition)
     const SpeechRecognition = typeof window !== 'undefined'
       ? (window.SpeechRecognition || window.webkitSpeechRecognition)
       : null;
@@ -83,21 +226,12 @@ export default function Home({
       return;
     }
 
-    if (isListening) {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (_) {}
-      }
-      setIsListening(false);
-      return;
-    }
-
     try {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'en-US';
+      const currentLangConfig = SUPPORTED_LANGUAGES.find((l) => l.code === selectedLanguage) || SUPPORTED_LANGUAGES[0];
+      recognition.lang = currentLangConfig.bcp47;
 
       speechBaseTextRef.current = prompt.trim();
 
@@ -227,6 +361,9 @@ export default function Home({
     try {
       const formData = new FormData();
       formData.append('prompt', trimmedPrompt);
+      if (selectedLanguage) {
+        formData.append('language', selectedLanguage);
+      }
 
       images.forEach((imgObj) => {
         formData.append('images', imgObj.file);
@@ -356,23 +493,52 @@ export default function Home({
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Prompt Input */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <label
                 htmlFor="attack-prompt"
                 className="block text-sm font-semibold text-gray-200"
               >
                 Describe the Attack Scenario
               </label>
+
               <div className="flex items-center gap-2.5">
+                {/* Language Selector */}
+                <div className="flex items-center gap-1.5 bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg px-2.5 py-1 transition-colors">
+                  <Languages className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <select
+                    data-testid="language-select"
+                    value={selectedLanguage}
+                    onChange={(e) => setSelectedLanguage(e.target.value)}
+                    className="bg-transparent text-xs text-gray-200 font-medium focus:outline-none cursor-pointer pr-1"
+                    title="Select simulation language"
+                  >
+                    {SUPPORTED_LANGUAGES.map((lang) => (
+                      <option key={lang.code} value={lang.code} className="bg-gray-900 text-gray-200">
+                        {lang.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 {isListening && (
                   <span
                     data-testid="listening-indicator"
                     className="flex items-center gap-1.5 text-xs text-red-400 font-medium animate-pulse"
                   >
                     <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                    Listening... Speak now
+                    Listening ({selectedLanguage === 'auto' ? 'Auto Detect' : currentLangConfig.label.split(' ')[0]})...
                   </span>
                 )}
+                {isTranscribing && (
+                  <span
+                    data-testid="transcribing-indicator"
+                    className="flex items-center gap-1.5 text-xs text-blue-400 font-medium animate-pulse"
+                  >
+                    <Loader2 className="w-3 h-3 animate-spin text-blue-400" />
+                    Transcribing & detecting language...
+                  </span>
+                )}
+
                 <span
                   data-testid="char-counter"
                   className={`text-xs font-mono ${
@@ -406,29 +572,44 @@ export default function Home({
               <button
                 type="button"
                 data-testid="voice-input-btn"
+                disabled={isTranscribing}
                 onClick={toggleListening}
-                title={isListening ? 'Stop listening' : 'Speak scenario prompt (Voice Input)'}
+                title={
+                  isTranscribing
+                    ? 'Detecting language & transcribing...'
+                    : isListening
+                    ? 'Stop listening'
+                    : selectedLanguage === 'auto'
+                    ? 'Speak in any language (Auto Detect)'
+                    : `Speak prompt in ${currentLangConfig.label} (Voice Input)`
+                }
                 className={`w-24 shrink-0 rounded-xl border flex flex-col items-center justify-center gap-2 p-3 transition-all cursor-pointer select-none group ${
-                  isListening
+                  isTranscribing
+                    ? 'bg-blue-500/20 border-blue-500/80 text-blue-400 animate-pulse cursor-wait'
+                    : isListening
                     ? 'bg-red-500/20 border-red-500/80 text-red-400 shadow-lg shadow-red-500/20 animate-pulse ring-2 ring-red-500/30'
                     : 'bg-gray-950 hover:bg-gray-900 border-gray-800 hover:border-blue-500/60 text-gray-400 hover:text-blue-400'
                 }`}
               >
                 <div
                   className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-                    isListening
+                    isTranscribing
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : isListening
                       ? 'bg-red-500 text-white shadow-md'
                       : 'bg-gray-900 group-hover:bg-gray-800 text-blue-400 border border-gray-800'
                   }`}
                 >
-                  {isListening ? (
+                  {isTranscribing ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : isListening ? (
                     <MicOff className="w-5 h-5" />
                   ) : (
                     <Mic className="w-5 h-5" />
                   )}
                 </div>
                 <span className="text-[11px] font-semibold tracking-wide text-center leading-tight">
-                  {isListening ? 'Stop Mic' : 'Voice Input'}
+                  {isTranscribing ? 'Processing...' : isListening ? 'Stop Mic' : 'Voice Input'}
                 </span>
               </button>
             </div>

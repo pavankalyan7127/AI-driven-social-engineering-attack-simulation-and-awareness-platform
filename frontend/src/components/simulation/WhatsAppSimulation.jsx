@@ -232,6 +232,8 @@ export default function WhatsAppSimulation({
     impersonation: false
   });
   const [linkNotice, setLinkNotice] = useState(null);
+  const [isAiTyping, setIsAiTyping] = useState(false);
+  const [compromisedNotice, setCompromisedNotice] = useState(null);
 
   const menuRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -321,12 +323,13 @@ export default function WhatsAppSimulation({
   // Send message handler
   const handleSendMessage = (e) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || !activeConvId) return;
+    const trimmed = inputText.trim();
+    if (!trimmed || !activeConvId) return;
 
     const newMsg = {
       id: `msg-sent-${Date.now()}`,
       sender: 'user',
-      text: inputText.trim(),
+      text: trimmed,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: 'read'
     };
@@ -346,11 +349,96 @@ export default function WhatsAppSimulation({
 
     emitEvent('message_sent', {
       conversationId: activeConvId,
-      text: inputText.trim(),
+      text: trimmed,
       isTarget: activeConversation?.isTarget
     });
 
     setInputText('');
+
+    // Trigger AI attacker dynamic reply & sensitive leak evaluation
+    const historySnapshot = (activeConversation?.messages || []).concat(newMsg).map(m => ({
+      sender: m.sender,
+      text: m.text
+    }));
+
+    setIsAiTyping(true);
+    fetch('/api/scenarios/chat/respond', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userMessage: trimmed,
+        channel: 'whatsapp',
+        dialogueHistory: historySnapshot,
+        contactName: activeConversation?.contact?.name || scenario.contactName || 'WhatsApp Contact',
+        personaContext: scenario.description || scenario.title || 'Attacker contacting target on WhatsApp',
+        scenarioContext: scenario.title || '',
+        targetInformation: scenario.targetInformation || 'credentials, OTP, or verification link',
+        language: scenario.language || 'auto'
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setIsAiTyping(false);
+        if (!data || !data.success) return;
+
+        const attackerMsg = {
+          id: `msg-contact-${Date.now()}`,
+          sender: 'contact',
+          text: data.reply,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setConversations(prev =>
+          prev.map(c => {
+            if (c.id === activeConvId) {
+              return {
+                ...c,
+                lastActivity: attackerMsg.timestamp,
+                messages: [...(c.messages || []), attackerMsg]
+              };
+            }
+            return c;
+          })
+        );
+
+        emitEvent('message_received', {
+          conversationId: activeConvId,
+          messageId: attackerMsg.id,
+          text: data.reply,
+          sender: activeConversation?.contact?.name || 'Contact'
+        });
+
+        // Check for credential leak or negative termination
+        if (data.sensitiveInfoDisclosed || data.isNegativeTermination) {
+          setCompromisedNotice(data.explanation || 'Sensitive credentials disclosed via WhatsApp.');
+          emitEvent('sensitive_info_disclosed', {
+            conversationId: activeConvId,
+            reason: data.explanation || 'User disclosed credentials via WhatsApp',
+            leakedText: trimmed
+          });
+          emitEvent('credential_submitted', {
+            conversationId: activeConvId,
+            reason: data.explanation || 'User disclosed credentials via WhatsApp',
+            compromised: true
+          });
+
+          setTimeout(() => {
+            if (typeof onComplete === 'function') {
+              onComplete({
+                status: 'completed',
+                action: 'sensitive_info_disclosed',
+                scenarioId,
+                sessionId,
+                reason: data.explanation || 'User disclosed sensitive credentials or security information on WhatsApp'
+              });
+            }
+          }, 1200);
+        }
+      })
+      .catch(err => {
+        setIsAiTyping(false);
+        console.error('[WhatsApp AI Response Error]:', err);
+      });
   };
 
   // Handle simulated link clicked (Malicious Link Failure Condition)
@@ -917,6 +1005,26 @@ export default function WhatsAppSimulation({
                   </div>
                 );
               })}
+              {/* Attacker Typing Indicator */}
+              {isAiTyping && (
+                <div className="flex justify-start mb-2 animate-fadeIn">
+                  <div className="bg-[#202c33] rounded-lg rounded-tl-none px-3.5 py-2 shadow-xs flex items-center gap-1.5 border border-[#2a3942]/60">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#8696a0] animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#8696a0] animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#8696a0] animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <span className="text-[11px] text-[#8696a0] font-sans ml-1">typing...</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Compromise Notice */}
+              {compromisedNotice && (
+                <div className="my-2 p-2.5 bg-red-950/80 border border-red-700 rounded-lg text-xs text-red-200 flex items-center gap-2 animate-fadeIn">
+                  <AlertOctagon className="w-4 h-4 text-red-400 shrink-0" />
+                  <span><strong>Compromise Detected:</strong> {compromisedNotice}</span>
+                </div>
+              )}
+
               <div ref={messagesEndRef} />
             </div>
 

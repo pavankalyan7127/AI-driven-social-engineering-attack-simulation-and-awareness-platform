@@ -16,19 +16,25 @@ const inFlightGenerations = new Map();
  * @param {Array} events - Persisted SimulationEvent documents
  * @returns {Array} Sanitized, compact event summaries
  */
-export function sanitizeEventsForReport(events = []) {
+export function sanitizeEventsForReport(events = [], defaultChannel = '') {
   if (!Array.isArray(events)) return [];
 
   return events.map((evt) => {
     const eventType = evt.eventType || 'unknown_event';
     const timestamp = evt.timestamp ? new Date(evt.timestamp).toISOString() : null;
+    const channel = (evt.metadata?.channel || evt.channel || defaultChannel || '').toLowerCase();
+    const method = (evt.metadata?.method || '').toLowerCase();
 
     let summary = `Event: ${eventType}`;
     const safeMeta = {};
 
     switch (eventType) {
       case 'threat_reported':
-        summary = 'User identified threat indicators and submitted a security report.';
+        if (channel === 'call') {
+          summary = 'User identified vishing indicators and reported the fraudulent caller.';
+        } else {
+          summary = 'User identified threat indicators and submitted a security report.';
+        }
         if (evt.metadata?.indicators) {
           safeMeta.indicatorsReported = Object.keys(evt.metadata.indicators).filter(
             (k) => evt.metadata.indicators[k] === true
@@ -37,7 +43,41 @@ export function sanitizeEventsForReport(events = []) {
         break;
 
       case 'safe_exit':
-        summary = 'User safely closed or navigated away from the suspicious interface.';
+        if (channel === 'call') {
+          summary = 'User safely ended the telephone call without providing sensitive information.';
+        } else {
+          summary = 'User safely closed or navigated away from the suspicious interface.';
+        }
+        break;
+
+      case 'call_answered':
+        summary = 'User answered the incoming voice call.';
+        break;
+
+      case 'call_rejected':
+        summary = 'User declined the unverified incoming voice call.';
+        break;
+
+      case 'call_hung_up':
+        summary = 'User hung up the telephone call without complying with attacker demands.';
+        break;
+
+      case 'speech_input_provided':
+        summary = 'User spoke during the telephone call.';
+        break;
+
+      case 'dtmf_keypad_pressed':
+        summary = 'User entered digits on the telephone dial pad.';
+        break;
+
+      case 'user_blocked_sender':
+        if (channel === 'call') {
+          summary = 'User blocked the imposter caller phone number.';
+        } else if (channel === 'sms') {
+          summary = 'User blocked the sender phone number.';
+        } else {
+          summary = 'User blocked the suspicious contact.';
+        }
         break;
 
       case 'simulated_link_clicked':
@@ -45,10 +85,19 @@ export function sanitizeEventsForReport(events = []) {
         summary = 'User clicked an unverified simulated link in the scenario.';
         break;
 
+      case 'sensitive_info_disclosed':
       case 'simulated_credentials_submitted':
       case 'simulated_form_submitted':
       case 'credential_submitted':
-        summary = 'User submitted input into a simulated deceptive form.';
+        if (channel === 'call' || method.includes('spoken') || method.includes('voice') || method.includes('keypad') || evt.metadata?.userSpeech) {
+          summary = 'User verbally disclosed sensitive credentials or security details over the telephone call.';
+        } else if (['chat', 'sms', 'whatsapp', 'instagram', 'telegram'].includes(channel) || evt.metadata?.conversationId || evt.metadata?.leakedText) {
+          summary = 'User disclosed sensitive credentials or confidential information in the chat message.';
+        } else if (channel === 'email' || evt.metadata?.replyContent) {
+          summary = 'User disclosed sensitive credentials via email reply.';
+        } else {
+          summary = 'User submitted input into a simulated deceptive form.';
+        }
         break;
 
       case 'risky_reply_sent':
@@ -189,6 +238,12 @@ STRICT RULES & CONSTRAINTS:
    - Clarify that the score reflects observed interaction in this specific simulation only, not general cybersecurity competence.
 6. DATA PRIVACY: Never reproduce real or simulated passwords, tokens, full URLs, or personal identifiers.
 7. CHANNEL RELEVANCE: Tailor all recommendations specifically to the "${channel}" channel.
+8. CHANNEL MEDIUM FIDELITY:
+   - The simulation medium was "${channel}".
+   - If "${channel}" is "call" (voice telephone call / vishing), describe user interactions as speaking, verbally disclosing card/PIN/credentials over the phone, listening, or using telephone dialpad. NEVER state that the user "entered credentials into a form" or "clicked a link" on a phone call!
+   - If "${channel}" is "chat", "sms", "whatsapp", "instagram", or "telegram", describe interactions as messaging or chatting.
+   - If "${channel}" is "email", describe interactions as viewing email, checking links, or replying.
+   - If "${channel}" is "website", describe interactions as visiting web pages or submitting forms.
 
 JSON SCHEMA:
 {
@@ -273,7 +328,7 @@ export async function generateAwarenessReport({
     try {
       // 6. Retrieve and sanitize persisted events
       const events = await SimulationEvent.find({ sessionId: cleanSessionId }).sort({ timestamp: 1 });
-      const sanitizedEvents = sanitizeEventsForReport(events);
+      const sanitizedEvents = sanitizeEventsForReport(events, session.channel);
 
       // 7. Configure Groq client
       const apiKey = process.env.GROQ_API_KEY;
