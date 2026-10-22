@@ -23,6 +23,8 @@ import {
   StopCircle
 } from 'lucide-react';
 import AwarenessReportView from './components/report/AwarenessReportView';
+import DetectiveChallengeView from './components/detective/DetectiveChallengeView';
+import DetectiveReportView from './components/detective/DetectiveReportView';
 import { sendTelemetryEvent } from './services/telemetryService';
 
 /**
@@ -90,6 +92,33 @@ export default function App() {
   const [isRedoingSimulation, setIsRedoingSimulation] = useState(false);
   const observationStartedRef = useRef(false);
   const outcomeNavTimerRef = useRef(null);
+
+  // Cyber Detective Mode State
+  const [activeMode, setActiveMode] = useState('standard'); // 'standard' | 'detective'
+  const [detectiveChallenge, setDetectiveChallenge] = useState(null);
+  const [detectiveReport, setDetectiveReport] = useState(null);
+
+  const handleStartDetectiveChallenge = (challenge, meta = {}) => {
+    setDetectiveChallenge(challenge);
+    setDetectiveReport(null);
+    setActiveMode('detective');
+    if (meta.prompt) setSavedPrompt(meta.prompt);
+    setActiveView('detective_challenge');
+  };
+
+  const handleFinishDetectiveChallenge = (report) => {
+    setDetectiveReport(report);
+    setActiveView('detective_report');
+  };
+
+  const handleRedoDetectiveChallenge = () => {
+    if (detectiveChallenge) {
+      setDetectiveReport(null);
+      setActiveView('detective_challenge');
+    } else {
+      setActiveView('home');
+    }
+  };
 
   const sampleScenariosByChannel = {
     email: sampleScenario,
@@ -524,6 +553,8 @@ export default function App() {
     setReportIsStale(false);
     scoreRequestedRef.current = false;
     reportRequestedRef.current = false;
+    setDetectiveChallenge(null);
+    setDetectiveReport(null);
   };
 
   const clearEvents = () => {
@@ -534,8 +565,31 @@ export default function App() {
     return (
       <Home
         onGenerateScenario={handleScenarioGenerated}
+        onStartDetectiveChallenge={handleStartDetectiveChallenge}
         initialPrompt={savedPrompt}
         initialChannel={savedChannel}
+        initialMode={activeMode}
+      />
+    );
+  }
+
+  if (activeView === 'detective_challenge') {
+    return (
+      <DetectiveChallengeView
+        challenge={detectiveChallenge}
+        onFinishChallenge={handleFinishDetectiveChallenge}
+        onExit={handleReturnToGenerator}
+      />
+    );
+  }
+
+  if (activeView === 'detective_report') {
+    return (
+      <DetectiveReportView
+        report={detectiveReport}
+        challenge={detectiveChallenge}
+        onRedo={handleRedoDetectiveChallenge}
+        onReturnHome={handleReturnToGenerator}
       />
     );
   }

@@ -19,7 +19,8 @@ import {
   Image as ImageIcon,
   Download,
   Trash2,
-  ChevronRight
+  ChevronRight,
+  Check
 } from 'lucide-react';
 
 /**
@@ -115,10 +116,21 @@ export default function SmsSimulation({
   // Local conversations state
   const [conversations, setConversations] = useState(() => {
     if (Array.isArray(scenario.conversations) && scenario.conversations.length > 0) {
-      return scenario.conversations.map(c => ({
-        ...c,
-        messages: Array.isArray(c.messages) ? [...c.messages] : []
-      }));
+      return scenario.conversations.map(c => {
+        const contactName = c.sender?.name || c.contactName || c.name || scenario.senderName || 'Sender';
+        const phoneNumber = c.sender?.phoneNumber || c.phoneNumber || c.senderPhone || scenario.senderPhone || '+1 (800) 555-0199';
+        return {
+          ...c,
+          sender: c.sender || {
+            name: contactName,
+            phoneNumber,
+            avatar: contactName.charAt(0) || 'S',
+            avatarBg: 'bg-blue-600 text-white',
+            verificationStatus: c.verificationStatus || 'Verified Header'
+          },
+          messages: Array.isArray(c.messages) ? [...c.messages] : []
+        };
+      });
     }
     return [
       {
@@ -155,6 +167,58 @@ export default function SmsSimulation({
   const activeConversation = useMemo(() => {
     return conversations.find(c => c.id === activeConvId) || conversations[0] || null;
   }, [conversations, activeConvId]);
+
+  // Synchronize SMS conversations and active conversation when scenario prop changes across rounds
+  useEffect(() => {
+    let nextConvs = [];
+    if (Array.isArray(scenario.conversations) && scenario.conversations.length > 0) {
+      nextConvs = scenario.conversations.map(c => {
+        const contactName = c.sender?.name || c.contactName || c.name || scenario.senderName || 'Sender';
+        const phoneNumber = c.sender?.phoneNumber || c.phoneNumber || c.senderPhone || scenario.senderPhone || '+1 (800) 555-0199';
+        return {
+          ...c,
+          sender: c.sender || {
+            name: contactName,
+            phoneNumber,
+            avatar: contactName.charAt(0) || 'S',
+            avatarBg: 'bg-blue-600 text-white',
+            verificationStatus: c.verificationStatus || 'Verified Header'
+          },
+          messages: Array.isArray(c.messages) ? [...c.messages] : []
+        };
+      });
+    } else {
+      nextConvs = [
+        {
+          id: targetId,
+          isTarget: true,
+          sender: {
+            name: scenario.senderName || 'Unknown Sender',
+            phoneNumber: scenario.senderPhone || '+1 (800) 555-0199',
+            avatar: '!',
+            avatarBg: 'bg-red-700 text-white',
+            verificationStatus: 'Unverified Sender'
+          },
+          unreadCount: 1,
+          lastActivity: 'Just now',
+          messages: [
+            {
+              id: 'sms-default-1',
+              sender: 'contact',
+              text: scenario.description || 'Urgent verification required regarding your account.',
+              timestamp: 'Just now'
+            }
+          ]
+        }
+      ];
+    }
+    setConversations(nextConvs);
+    const target = nextConvs.find(c => c.isTarget || c.id === targetId);
+    setActiveConvId(target ? target.id : (nextConvs[0]?.id || null));
+    if (scenario.initialView) {
+      setCurrentView(scenario.initialView);
+    }
+  }, [scenario, targetId]);
 
   // Composer state
   const [inputText, setInputText] = useState('');
@@ -745,11 +809,16 @@ export default function SmsSimulation({
                   <span className="font-bold text-xs text-gray-900 truncate">
                     {activeConversation?.sender?.name || activeConversation?.sender?.phoneNumber}
                   </span>
-                  {activeConversation?.sender?.verificationStatus?.toLowerCase().includes('unverified') && (
+                  {activeConversation?.sender?.verificationStatus?.toLowerCase().includes('unverified') ? (
                     <span className="text-[9px] px-1 py-0.2 rounded font-medium bg-red-100 text-red-700 shrink-0">
                       Unverified
                     </span>
-                  )}
+                  ) : ((activeConversation?.sender?.isVerified || activeConversation?.isVerified || scenario.isReal || scenario.isLegitimate) && (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded font-medium bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 inline-flex items-center gap-0.5">
+                      <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      Verified
+                    </span>
+                  ))}
                 </div>
                 <div className="text-[10px] text-gray-500 font-mono truncate">
                   {activeConversation?.sender?.phoneNumber || 'SMS'}

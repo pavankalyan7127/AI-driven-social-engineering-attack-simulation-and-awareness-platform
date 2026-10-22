@@ -121,18 +121,36 @@ export default function EmailSimulation({
     return set;
   });
 
+  // Helper to normalize email objects so sender properties are never undefined
+  const normalizeEmailItem = (raw) => {
+    if (!raw) return raw;
+    const name = raw.sender?.name || raw.senderName || raw.fromName || raw.from || 'Sender';
+    const email = raw.sender?.email || raw.senderEmail || raw.fromEmail || 'sender@example.com';
+    return {
+      ...raw,
+      senderName: typeof name === 'string' ? name : 'Sender',
+      senderEmail: typeof email === 'string' ? email : 'sender@example.com',
+      sender: {
+        name: typeof name === 'string' ? name : 'Sender',
+        email: typeof email === 'string' ? email : 'sender@example.com',
+        avatarBg: raw.sender?.avatarBg,
+        avatar: raw.sender?.avatar || (typeof name === 'string' ? name.charAt(0).toUpperCase() : 'S')
+      }
+    };
+  };
+
   // Combine scenario.emailData with companion inbox messages into a unified list
   const initialMessages = useMemo(() => {
     const list = [];
-    const targetEmail = scenario.emailData;
+    const targetEmail = normalizeEmailItem(scenario.emailData);
 
     if (scenario.inboxMessages && Array.isArray(scenario.inboxMessages)) {
       scenario.inboxMessages.forEach(msg => {
         // If message is target or has targetId, merge full target details
         if (msg.isTarget || msg.id === targetId || (targetEmail && msg.id === targetEmail.id)) {
-          list.push({ ...targetEmail, ...msg, isTarget: true });
+          list.push(normalizeEmailItem({ ...targetEmail, ...msg, isTarget: true }));
         } else {
-          list.push(msg);
+          list.push(normalizeEmailItem(msg));
         }
       });
     }
@@ -143,15 +161,29 @@ export default function EmailSimulation({
     }
 
     return list;
-  }, [scenario]);
+  }, [scenario, targetId]);
 
   const [inboxList, setInboxList] = useState(initialMessages);
 
   // Active email in View B (default to target phishing email or first message)
   const [activeEmail, setActiveEmail] = useState(() => {
-    if (scenario.emailData) return scenario.emailData;
+    if (scenario.emailData) return normalizeEmailItem(scenario.emailData);
     return initialMessages.find(m => m.isTarget) || initialMessages[0] || null;
   });
+
+  // Synchronize active email and inbox when scenario prop changes across rounds
+  useEffect(() => {
+    setInboxList(initialMessages);
+    const normalizedTarget = normalizeEmailItem(scenario.emailData);
+    if (normalizedTarget) {
+      setActiveEmail(normalizedTarget);
+    } else {
+      setActiveEmail(initialMessages.find(m => m.isTarget) || initialMessages[0] || null);
+    }
+    if (scenario.initialView) {
+      setCurrentView(scenario.initialView);
+    }
+  }, [scenario, initialMessages]);
 
   // Security routing details dropdown ("to me ▾")
   const [showSecurityDetails, setShowSecurityDetails] = useState(false);
@@ -1101,7 +1133,7 @@ export default function EmailSimulation({
                       >
                         <Ban className="w-4 h-4 text-[#f28b82] mr-3 shrink-0" />
                         <span className="truncate">
-                          Block &ldquo;{activeEmail.sender?.name || activeEmail.sender?.email || 'Sender'}&rdquo;
+                          Block &ldquo;{activeEmail.sender?.name || activeEmail.senderName || activeEmail.sender?.email || activeEmail.senderEmail || 'Sender'}&rdquo;
                         </span>
                       </button>
 
@@ -1167,12 +1199,12 @@ export default function EmailSimulation({
                       activeEmail.sender?.avatarBg || 'bg-[#303833] text-[#e1e3e0]'
                     }`}
                   >
-                    {activeEmail.sender?.avatar || activeEmail.sender?.name?.charAt(0) || 'U'}
+                    {activeEmail.sender?.avatar || activeEmail.sender?.name?.charAt(0) || activeEmail.senderName?.charAt(0) || 'S'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2">
                       <span className="font-bold text-sm text-[#e1e3e0] truncate">
-                        {activeEmail.sender?.name || 'Sender'}
+                        {activeEmail.sender?.name || activeEmail.senderName || activeEmail.fromName || 'Sender'}
                       </span>
                       <span className="text-xs text-[#8e938f] shrink-0">
                         {activeEmail.timestamp || 'Yesterday'}
@@ -1192,7 +1224,7 @@ export default function EmailSimulation({
                         <div className="absolute top-6 left-0 z-30 w-72 sm:w-80 p-3 bg-[#1c2420] border border-[#2e3a33] rounded-xl shadow-xl text-xs text-[#c2c8c4] space-y-1">
                           <div>
                             <span className="text-[#8e938f]">From: </span>
-                            {activeEmail.securityDetails?.from || activeEmail.sender?.email}
+                            {activeEmail.securityDetails?.from || activeEmail.sender?.email || activeEmail.senderEmail || 'sender@example.com'}
                           </div>
                           <div>
                             <span className="text-[#8e938f]">To: </span>
@@ -1338,7 +1370,7 @@ export default function EmailSimulation({
                         >
                           <Ban className="w-4 h-4 text-[#f28b82] mr-3 shrink-0" />
                           <span className="truncate">
-                            Block &ldquo;{activeEmail.sender?.name || activeEmail.sender?.email || 'Sender'}&rdquo;
+                            Block &ldquo;{activeEmail.sender?.name || activeEmail.senderName || activeEmail.sender?.email || activeEmail.senderEmail || 'Sender'}&rdquo;
                           </span>
                         </button>
 
@@ -1517,7 +1549,7 @@ export default function EmailSimulation({
                           msg.sender?.avatarBg || 'bg-[#2f3832] text-[#c2c8c4]'
                         }`}
                       >
-                        {msg.sender?.avatar || msg.sender?.name?.charAt(0) || 'U'}
+                        {msg.sender?.avatar || msg.sender?.name?.charAt(0) || msg.senderName?.charAt(0) || 'S'}
                       </div>
 
                       {/* Content Column */}
@@ -1529,7 +1561,7 @@ export default function EmailSimulation({
                               isUnread ? 'font-bold text-[#e1e3e0]' : 'font-normal text-[#c2c8c4]'
                             }`}
                           >
-                            {msg.sender?.name || 'Sender'}
+                            {msg.sender?.name || msg.senderName || msg.fromName || 'Sender'}
                           </span>
                           <div className="flex items-center gap-1.5 shrink-0 ml-2">
                             <span
@@ -2212,7 +2244,7 @@ export default function EmailSimulation({
                             isRead ? 'font-normal text-gray-700' : 'font-bold text-gray-950'
                           }`}
                         >
-                          {msg.sender?.name || 'Unknown Sender'}
+                          {msg.sender?.name || msg.senderName || msg.fromName || 'Unknown Sender'}
                         </div>
 
                         {/* Subject + Snippet Preview */}
@@ -2459,7 +2491,7 @@ export default function EmailSimulation({
                         >
                           <Ban className="w-4 h-4 text-gray-600 mr-3 shrink-0" />
                           <span className="truncate">
-                            Block &ldquo;{activeEmail.sender?.email || activeEmail.sender?.name || 'Sender'}&rdquo;
+                            Block &ldquo;{activeEmail.sender?.email || activeEmail.senderEmail || activeEmail.sender?.name || activeEmail.senderName || 'Sender'}&rdquo;
                           </span>
                         </button>
 
@@ -2551,17 +2583,17 @@ export default function EmailSimulation({
                         activeEmail.sender?.avatarBg || 'bg-red-700 text-white'
                       }`}
                     >
-                      {activeEmail.sender?.avatar || activeEmail.sender?.name?.charAt(0) || 'V'}
+                      {activeEmail.sender?.avatar || activeEmail.sender?.name?.charAt(0) || activeEmail.senderName?.charAt(0) || 'S'}
                     </div>
 
                     {/* Sender Name & To info */}
                     <div>
                       <div className="flex items-baseline gap-2 flex-wrap">
                         <span className="font-bold text-sm text-gray-950">
-                          {activeEmail.sender?.name || 'VIT Events'}
+                          {activeEmail.sender?.name || activeEmail.senderName || activeEmail.fromName || 'Sender'}
                         </span>
                         <span className="text-xs text-[#5e5e5e]">
-                          &lt;{activeEmail.sender?.email || 'events-security@vit-update.ac.in'}&gt;
+                          &lt;{activeEmail.sender?.email || activeEmail.senderEmail || activeEmail.fromEmail || 'sender@example.com'}&gt;
                         </span>
                       </div>
 
@@ -2582,13 +2614,13 @@ export default function EmailSimulation({
                               <div className="flex">
                                 <span className="w-20 text-gray-400">from:</span>
                                 <span className="font-medium text-gray-900 break-all">
-                                  {activeEmail.securityDetails?.from || activeEmail.sender?.email}
+                                  {activeEmail.securityDetails?.from || activeEmail.sender?.email || activeEmail.senderEmail || 'sender@example.com'}
                                 </span>
                               </div>
                               <div className="flex">
                                 <span className="w-20 text-gray-400">reply-to:</span>
                                 <span className="text-gray-800 break-all">
-                                  {activeEmail.securityDetails?.replyTo || 'helpdesk-reply@vit-update.ac.in'}
+                                  {activeEmail.securityDetails?.replyTo || activeEmail.sender?.email || activeEmail.senderEmail || 'support@example.com'}
                                 </span>
                               </div>
                               <div className="flex">
@@ -2749,7 +2781,7 @@ export default function EmailSimulation({
                           >
                             <Ban className="w-4 h-4 text-gray-600 mr-3 shrink-0" />
                             <span className="truncate">
-                              Block &ldquo;{activeEmail.sender?.email || activeEmail.sender?.name || 'Sender'}&rdquo;
+                              Block &ldquo;{activeEmail.sender?.email || activeEmail.senderEmail || activeEmail.sender?.name || activeEmail.senderName || 'Sender'}&rdquo;
                             </span>
                           </button>
 
@@ -2981,7 +3013,7 @@ export default function EmailSimulation({
                         <div className="flex items-center gap-2">
                           <CornerUpLeft className="w-4 h-4 text-gray-500" />
                           <span>
-                            Reply to <strong>{activeEmail.sender?.name || 'Sender'}</strong> ({activeEmail.sender?.email})
+                            Reply to <strong>{activeEmail.sender?.name || activeEmail.senderName || 'Sender'}</strong> ({activeEmail.sender?.email || activeEmail.senderEmail})
                           </span>
                         </div>
                         <button

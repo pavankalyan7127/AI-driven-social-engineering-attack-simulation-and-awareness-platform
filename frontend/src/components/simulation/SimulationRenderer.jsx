@@ -341,10 +341,13 @@ export default function SimulationRenderer({
   );
 
   // 3. Explicit Channel Dispatcher Mapping
+  const simKey = scenario?.scenarioId || scenario?.emailData?.id || sessionId;
+
   switch (channel) {
     case SUPPORTED_CHANNELS.EMAIL:
       return (
         <EmailSimulation
+          key={simKey}
           scenario={scenario}
           sessionId={sessionId}
           deviceMode={deviceMode}
@@ -356,6 +359,7 @@ export default function SimulationRenderer({
     case SUPPORTED_CHANNELS.WHATSAPP:
       return (
         <WhatsAppSimulation
+          key={simKey}
           scenario={scenario}
           sessionId={sessionId}
           deviceMode={deviceMode}
@@ -367,6 +371,7 @@ export default function SimulationRenderer({
     case SUPPORTED_CHANNELS.INSTAGRAM:
       return (
         <InstagramSimulation
+          key={simKey}
           scenario={scenario}
           sessionId={sessionId}
           deviceMode={deviceMode}
@@ -378,6 +383,7 @@ export default function SimulationRenderer({
     case SUPPORTED_CHANNELS.TELEGRAM:
       return (
         <TelegramSimulation
+          key={simKey}
           scenario={scenario}
           sessionId={sessionId}
           deviceMode={deviceMode}
@@ -396,6 +402,7 @@ export default function SimulationRenderer({
       if (combinedText.includes('whatsapp')) {
         return (
           <WhatsAppSimulation
+            key={simKey}
             scenario={scenario}
             sessionId={sessionId}
             deviceMode={deviceMode}
@@ -408,6 +415,7 @@ export default function SimulationRenderer({
       if (combinedText.includes('instagram') || combinedText.includes('insta') || combinedText.includes(' ig ')) {
         return (
           <InstagramSimulation
+            key={simKey}
             scenario={scenario}
             sessionId={sessionId}
             deviceMode={deviceMode}
@@ -420,6 +428,7 @@ export default function SimulationRenderer({
       if (combinedText.includes('telegram')) {
         return (
           <TelegramSimulation
+            key={simKey}
             scenario={scenario}
             sessionId={sessionId}
             deviceMode={deviceMode}
@@ -431,6 +440,7 @@ export default function SimulationRenderer({
 
       return (
         <ChatSimulation
+          key={simKey}
           scenario={scenario}
           sessionId={sessionId}
           onAction={handleNormalizedAction}
@@ -442,6 +452,7 @@ export default function SimulationRenderer({
     case SUPPORTED_CHANNELS.SMS:
       return (
         <SmsSimulation
+          key={simKey}
           scenario={scenario}
           sessionId={sessionId}
           onAction={handleNormalizedAction}
@@ -452,6 +463,7 @@ export default function SimulationRenderer({
     case SUPPORTED_CHANNELS.WEBSITE:
       return (
         <WebsiteSimulation
+          key={simKey}
           scenario={scenario}
           sessionId={sessionId}
           onAction={handleNormalizedAction}
@@ -462,6 +474,7 @@ export default function SimulationRenderer({
     case SUPPORTED_CHANNELS.CALL:
       return (
         <VoiceCallSimulation
+          key={simKey}
           scenario={scenario}
           sessionId={sessionId}
           onAction={handleNormalizedAction}

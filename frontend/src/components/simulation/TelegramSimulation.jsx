@@ -81,7 +81,35 @@ export default function TelegramSimulation({
   // Normalize conversations list
   const initialConversations = useMemo(() => {
     if (Array.isArray(scenario.conversations) && scenario.conversations.length > 0) {
-      return scenario.conversations;
+      return scenario.conversations.map((c, idx) => {
+        const name = c.contact?.name || c.contactName || c.sender?.name || scenario.contactName || 'Telegram Channel';
+        const isVerified = Boolean(
+          c.contact?.isVerified !== undefined
+            ? c.contact.isVerified
+            : (c.isVerified !== undefined
+                ? c.isVerified
+                : (scenario.isVerified !== undefined
+                    ? scenario.isVerified
+                    : (scenario.isReal || scenario.isLegitimate || false)))
+        );
+        const subtitle = c.contact?.subtitle || c.subtitle || (isVerified ? 'Official Channel' : 'public channel');
+        return {
+          ...c,
+          id: c.id || `conv-${idx + 1}`,
+          isTarget: c.isTarget !== undefined ? c.isTarget : (idx === 0),
+          isVerified,
+          contact: {
+            name,
+            subtitle,
+            avatar: c.contact?.avatar || (name ? name.charAt(0).toUpperCase() : 'T'),
+            avatarBg: c.contact?.avatarBg || (isVerified ? 'bg-sky-600 text-white' : 'bg-purple-700 text-white'),
+            status: c.contact?.status || (isVerified ? 'Official Verified Channel' : 'channel'),
+            ...(c.contact || {}),
+            isVerified
+          },
+          messages: Array.isArray(c.messages) ? c.messages : []
+        };
+      });
     }
     return [
       {
@@ -179,6 +207,13 @@ export default function TelegramSimulation({
     const target = initialConversations.find(c => c.isTarget);
     return target ? target.id : initialConversations[0]?.id || null;
   });
+
+  // Synchronize conversations and active conversation when scenario prop changes across detective rounds
+  useEffect(() => {
+    setConversations(initialConversations);
+    const target = initialConversations.find(c => c.isTarget);
+    setActiveConvId(target ? target.id : (initialConversations[0]?.id || null));
+  }, [initialConversations]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [inputText, setInputText] = useState('');
@@ -600,6 +635,15 @@ export default function TelegramSimulation({
                       <span className={`text-sm font-semibold truncate ${isSelected ? 'text-white' : 'text-gray-100'}`}>
                         {conv.contact?.name}
                       </span>
+                      {(conv.contact?.isVerified || conv.isVerified) && (
+                        <span
+                          className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#3390ec] text-white shrink-0 shadow-xs"
+                          title="Verified Channel"
+                          data-testid="telegram-sidebar-verified-badge"
+                        >
+                          <Check className="w-2.5 h-2.5 stroke-[3.5]" />
+                        </span>
+                      )}
                       {isScam && (
                         <span className="px-1 py-0.2 text-[9px] font-black uppercase rounded bg-red-950 text-red-400 border border-red-800">
                           SCAM
@@ -679,14 +723,27 @@ export default function TelegramSimulation({
                 </div>
 
                 <div className="min-w-0">
-                  <h3 className="text-sm font-semibold text-white truncate flex items-center gap-1.5">
-                    {activeConversation.contact?.name}
-                  </h3>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <h3 className="text-sm font-semibold text-white truncate">
+                      {activeConversation.contact?.name}
+                    </h3>
+                    {(activeConversation.contact?.isVerified || activeConversation.isVerified) && (
+                      <span
+                        className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#3390ec] text-white shrink-0 shadow-xs"
+                        title="Verified Channel"
+                        data-testid="telegram-verified-badge"
+                      >
+                        <Check className="w-2.5 h-2.5 stroke-[3.5]" />
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[11px] text-gray-400 truncate">
                     {activeConversation.contact?.subtitle ||
-                      (activeConversation.contact?.status === 'supergroup'
-                        ? '2 837 members, 110 online'
-                        : 'online')}
+                      ((activeConversation.contact?.isVerified || activeConversation.isVerified)
+                        ? 'Official Channel'
+                        : (activeConversation.contact?.status === 'supergroup'
+                            ? '2 837 members, 110 online'
+                            : 'online'))}
                   </p>
                 </div>
               </div>

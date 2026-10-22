@@ -79,7 +79,36 @@ export default function WhatsAppSimulation({
   // Build conversations list from scenario
   const initialConversations = useMemo(() => {
     if (Array.isArray(scenario.conversations) && scenario.conversations.length > 0) {
-      return scenario.conversations;
+      return scenario.conversations.map((c, idx) => {
+        const name = c.contact?.name || c.contactName || c.sender?.name || scenario.contactName || 'WhatsApp Contact';
+        const phone = c.contact?.phone || c.phoneNumber || c.sender?.phoneNumber || '+91 94421 88902';
+        const isVerified = Boolean(
+          c.contact?.isVerified !== undefined
+            ? c.contact.isVerified
+            : (c.isVerified !== undefined
+                ? c.isVerified
+                : (scenario.isVerified !== undefined
+                    ? scenario.isVerified
+                    : (scenario.isReal || scenario.isLegitimate || false)))
+        );
+        return {
+          ...c,
+          id: c.id || `conv-${idx + 1}`,
+          isTarget: c.isTarget !== undefined ? c.isTarget : (idx === 0),
+          isVerified,
+          contact: {
+            name,
+            phone,
+            avatar: c.contact?.avatar || (name ? name.charAt(0).toUpperCase() : 'W'),
+            avatarBg: c.contact?.avatarBg || (isVerified ? 'bg-emerald-700 text-white' : 'bg-[#6b7b85] text-white'),
+            status: c.contact?.status || (isVerified ? 'Official business account' : 'online'),
+            about: c.contact?.about || (isVerified ? 'Official Verified Business Account' : 'Hey there! I am using WhatsApp.'),
+            ...(c.contact || {}),
+            isVerified
+          },
+          messages: Array.isArray(c.messages) ? c.messages : []
+        };
+      });
     }
     return [
       {
@@ -219,6 +248,13 @@ export default function WhatsAppSimulation({
     const target = initialConversations.find(c => c.isTarget);
     return target ? target.id : (initialConversations[0]?.id || null);
   });
+
+  // Synchronize conversations and active conversation when scenario prop changes across rounds
+  useEffect(() => {
+    setConversations(initialConversations);
+    const target = initialConversations.find(c => c.isTarget);
+    setActiveConvId(target ? target.id : (initialConversations[0]?.id || null));
+  }, [initialConversations]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'unread' | 'favorites' | 'groups'
@@ -718,19 +754,34 @@ export default function WhatsAppSimulation({
                 >
                   {/* Contact Avatar */}
                   <div
-                    className={`w-12 h-12 rounded-full shrink-0 flex items-center justify-center shadow-sm overflow-hidden ${
-                      conv.contact?.avatarBg || 'bg-[#6b7b85] text-white'
+                    className={`w-12 h-12 rounded-full shrink-0 flex items-center justify-center shadow-sm overflow-hidden font-bold text-base ${
+                      conv.contact?.avatarBg || ((conv.contact?.isVerified || conv.isVerified) ? 'bg-[#00a884] text-white' : 'bg-[#6b7b85] text-white')
                     }`}
                   >
-                    <User className="w-7 h-7 text-[#cfd9df]" />
+                    {conv.contact?.avatar && conv.contact.avatar.length <= 2 ? (
+                      <span className="text-white text-lg font-semibold">{conv.contact.avatar}</span>
+                    ) : (
+                      <User className="w-7 h-7 text-[#cfd9df]" />
+                    )}
                   </div>
 
                   {/* Info Column */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                      <span className="font-semibold text-sm text-[#e9edef] truncate">
-                        {conv.contact?.name || 'Contact'}
-                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                        <span className="font-semibold text-sm text-[#e9edef] truncate">
+                          {conv.contact?.name || 'Contact'}
+                        </span>
+                        {(conv.contact?.isVerified || conv.isVerified) && (
+                          <span
+                            className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#00a884] text-white shrink-0 shadow-xs"
+                            title="Verified Official Account"
+                            data-testid="whatsapp-sidebar-verified-badge"
+                          >
+                            <Check className="w-2.5 h-2.5 stroke-[3.5]" />
+                          </span>
+                        )}
+                      </div>
                       <span
                         className={`text-[11px] shrink-0 ml-2 ${
                           conv.unreadCount > 0 ? 'text-[#25d366] font-semibold' : 'text-[#8696a0]'
@@ -790,18 +841,35 @@ export default function WhatsAppSimulation({
                   </button>
                 )}
                 <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center shadow-sm shrink-0 overflow-hidden ${
-                    activeConversation.contact?.avatarBg || 'bg-[#6b7b85] text-white'
+                  className={`w-10 h-10 rounded-full flex items-center justify-center shadow-sm shrink-0 overflow-hidden font-bold text-sm ${
+                    activeConversation.contact?.avatarBg || ((activeConversation.contact?.isVerified || activeConversation.isVerified) ? 'bg-[#00a884] text-white' : 'bg-[#6b7b85] text-white')
                   }`}
                 >
-                  <User className="w-6 h-6 text-[#cfd9df]" />
+                  {activeConversation.contact?.avatar && activeConversation.contact.avatar.length <= 2 ? (
+                    <span className="text-white text-base font-semibold">{activeConversation.contact.avatar}</span>
+                  ) : (
+                    <User className="w-6 h-6 text-[#cfd9df]" />
+                  )}
                 </div>
                 <div className="min-w-0">
-                  <h2 className="font-semibold text-sm sm:text-base text-[#e9edef] truncate">
-                    {activeConversation.contact?.name}
-                  </h2>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <h2 className="font-semibold text-sm sm:text-base text-[#e9edef] truncate">
+                      {activeConversation.contact?.name}
+                    </h2>
+                    {(activeConversation.contact?.isVerified || activeConversation.isVerified) && (
+                      <span
+                        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[#00a884] text-white shrink-0 shadow-xs"
+                        title="Verified Official Account"
+                        data-testid="whatsapp-verified-badge"
+                      >
+                        <Check className="w-2.5 h-2.5 stroke-[3.5]" />
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[11px] text-[#8696a0] truncate">
-                    {activeConversation.contact?.status === 'online' ? 'online' : 'last seen recently'}
+                    {(activeConversation.contact?.isVerified || activeConversation.isVerified)
+                      ? 'Official business account'
+                      : (activeConversation.contact?.status === 'online' ? 'online' : 'last seen recently')}
                   </p>
                 </div>
               </div>

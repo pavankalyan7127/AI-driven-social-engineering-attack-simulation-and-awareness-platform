@@ -756,6 +756,15 @@ export default function ChatSimulation({
                 <span className="font-semibold text-sm text-gray-900 truncate">
                   {activeConversation?.contact?.name || 'Contact'}
                 </span>
+                {(activeConversation?.contact?.isVerified || activeConversation?.isVerified || scenario.isReal || scenario.isLegitimate) && (
+                  <span
+                    className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 text-white shrink-0"
+                    title="Verified Official Account"
+                    data-testid="chat-verified-badge"
+                  >
+                    <Check className="w-2.5 h-2.5 stroke-[3.5]" />
+                  </span>
+                )}
                 {activeConversation?.contact?.badge && (
                   <span
                     className={`text-[10px] px-1.5 py-0.2 rounded font-medium shrink-0 ${

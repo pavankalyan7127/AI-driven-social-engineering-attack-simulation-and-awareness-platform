@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import scenariosRouter from './routes/scenarios.js';
 import sessionsRouter from './routes/sessions.js';
 import eventsRouter from './routes/events.js';
+import detectiveRouter from './routes/detective.js';
 
 dotenv.config();
 
@@ -23,6 +24,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/scenarios', scenariosRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/events', eventsRouter);
+app.use('/api/detective', detectiveRouter);
 
 // 404 Handler
 app.use((req, res) => {

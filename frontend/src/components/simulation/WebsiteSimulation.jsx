@@ -99,11 +99,39 @@ export default function WebsiteSimulation({
   const [formValues, setFormValues] = useState({});
   const [passwordMasked, setPasswordMasked] = useState(true);
 
+  // Legitimate / Real scenario detection
+  const isReal = Boolean(
+    scenario.isReal ||
+    scenario.isLegitimate ||
+    scenario.verdict === 'legitimate' ||
+    scenario.type === 'REAL'
+  );
+
+  // Synchronize navigation history and reset form when scenario prop updates across detective rounds
+  useEffect(() => {
+    const nextInitialPageId = scenario.initialPageId || Object.keys(scenario.pages || {})[0] || 'page-home';
+    setHistory([nextInitialPageId]);
+    setHistoryIndex(0);
+    setFormValues({});
+    setShowSecurityPopover(false);
+    setIsChromeMenuOpen(false);
+  }, [scenario]);
+
   // Browser Address bar text (mirrors current page URL)
-  const currentUrl = currentPage?.url || `https://${scenario.browserConfig?.defaultDomain || 'vtop.vit.ac.in'}/${currentPageId}`;
+  // For legitimate simulations, strictly enforce https://
+  let rawUrl = currentPage?.url || `https://${scenario.browserConfig?.defaultDomain || 'vtop.vit.ac.in'}/${currentPageId}`;
+  if (isReal) {
+    rawUrl = rawUrl.replace(/^http:\/\//i, 'https://');
+    if (!/^https?:\/\//i.test(rawUrl)) {
+      rawUrl = `https://${rawUrl}`;
+    }
+  }
+  const currentUrl = rawUrl;
 
   // Security status & popover
-  const securityStatus = scenario.browserConfig?.securityStatus || (currentPage?.isTargetPhish ? 'unsecured' : 'secure');
+  const securityStatus = isReal
+    ? 'secure'
+    : (scenario.browserConfig?.securityStatus || (currentPage?.isTargetPhish ? 'unsecured' : (currentUrl.startsWith('https://') ? 'secure' : 'unsecured')));
   const [showSecurityPopover, setShowSecurityPopover] = useState(false);
 
   // Chrome 3-Dot Menu State & Submenu

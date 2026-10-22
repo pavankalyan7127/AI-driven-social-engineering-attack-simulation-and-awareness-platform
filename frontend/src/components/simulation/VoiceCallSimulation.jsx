@@ -21,7 +21,8 @@ import {
   Circle,
   ChevronDown,
   ChevronUp,
-  Send
+  Send,
+  RotateCcw
 } from 'lucide-react';
 
 /**
@@ -63,6 +64,15 @@ export default function VoiceCallSimulation({
 
   const { callData, scenarioId } = scenario;
   const initialView = scenario.initialView || 'incoming';
+
+  // Detective Mode Detection: In Cyber Detective Mode, the call speaks once and does NOT listen
+  const isDetectiveMode = Boolean(
+    scenario.isDetective ||
+    scenario.isDetectiveMode ||
+    scenario.mode === 'detective' ||
+    scenario.category === 'Detective Triage' ||
+    String(scenario.scenarioId || '').startsWith('det-')
+  );
 
   // State Management
   const [callState, setCallState] = useState(initialView); // 'incoming' | 'connected' | 'ended'
@@ -191,8 +201,13 @@ export default function VoiceCallSimulation({
     } catch (_) {}
   };
 
-  // Safe STT start helper
+  // Safe STT start helper (Standard Simulation Mode ONLY)
   const startListeningAutomatically = useCallback(() => {
+    // In Cyber Detective Mode, the call only speaks once and NEVER listens
+    if (isDetectiveMode) {
+      return;
+    }
+
     if (
       callStateRef.current !== 'connected' ||
       isMutedRef.current ||
@@ -211,7 +226,7 @@ export default function VoiceCallSimulation({
     } catch (e) {
       // recognition already active or warming up
     }
-  }, []);
+  }, [isDetectiveMode]);
 
   // Safe STT stop helper
   const stopListeningImmediately = useCallback(() => {
@@ -238,12 +253,13 @@ export default function VoiceCallSimulation({
     isAttackerSpeakingRef.current = true;
 
     if (!ttsEnabled || typeof window === 'undefined' || !window.speechSynthesis) {
-      // If TTS disabled or unsupported, release lock and start listening immediately
       setTimeout(() => {
         setIsAttackerSpeaking(false);
         isAttackerSpeakingRef.current = false;
         speechBufferRef.current = '';
-        startListeningAutomatically();
+        if (!isDetectiveMode) {
+          startListeningAutomatically();
+        }
       }, 800);
       return;
     }
@@ -280,6 +296,11 @@ export default function VoiceCallSimulation({
         isAttackerSpeakingRef.current = false;
         speechBufferRef.current = '';
 
+        // In Cyber Detective Mode, the call strictly speaks once. It does NOT listen.
+        if (isDetectiveMode) {
+          return;
+        }
+
         // Buffer pause of 650ms so browser speaker audio doesn't loop back into microphone!
         setTimeout(() => {
           if (callStateRef.current === 'connected' && !isMutedRef.current) {
@@ -296,12 +317,43 @@ export default function VoiceCallSimulation({
       setIsAttackerSpeaking(false);
       isAttackerSpeakingRef.current = false;
       speechBufferRef.current = '';
-      startListeningAutomatically();
+      if (!isDetectiveMode) {
+        startListeningAutomatically();
+      }
     }
-  }, [startListeningAutomatically, stopListeningImmediately, ttsEnabled]);
+  }, [isDetectiveMode, startListeningAutomatically, stopListeningImmediately, ttsEnabled]);
 
-  // Setup Web Speech Recognition (STT) on mount
+  const hasSpokenInitialRef = useRef(false);
+
+  // Synchronize call state across detective rounds
   useEffect(() => {
+    hasSpokenInitialRef.current = false;
+    setCallState(scenario.initialView || 'incoming');
+    setCallDuration(0);
+    setDialogueHistory([]);
+    setIsAttackerSpeaking(false);
+    isAttackerSpeakingRef.current = false;
+    stopListeningImmediately();
+  }, [scenario, stopListeningImmediately]);
+
+  // If call is already connected on mount / round transition, speak initial line once
+  useEffect(() => {
+    if (callState === 'connected' && !hasSpokenInitialRef.current) {
+      hasSpokenInitialRef.current = true;
+      const opening = callData.callerSpeech || callData.openingLine || 'Hello, this is fraud prevention calling regarding suspicious activity on your account.';
+      const initialDialogue = [{ sender: 'caller', text: opening, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }];
+      setDialogueHistory(initialDialogue);
+      speakText(opening);
+    }
+  }, [callState, callData, speakText]);
+
+  // Setup Web Speech Recognition (STT) on mount (Standard Simulation Mode ONLY)
+  useEffect(() => {
+    // In Cyber Detective Mode, the call only speaks once and never listens - do not start mic
+    if (isDetectiveMode) {
+      return;
+    }
+
     if (typeof window !== 'undefined') {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
@@ -395,6 +447,9 @@ export default function VoiceCallSimulation({
             return;
           }
 
+          // In Cyber Detective Mode, never auto-resume listening
+          if (isDetectiveMode) return;
+
           // If still in connected call, not muted, and attacker isn't talking, auto-resume listening
           if (
             callStateRef.current === 'connected' &&
@@ -430,8 +485,8 @@ export default function VoiceCallSimulation({
     setCallState('connected');
     emitEvent('call_answered', { callerName: callData.callerName, callerNumber: callData.callerNumber });
 
-    // Initial Attacker Opening Line
-    const opening = callData.openingLine || 'Hello, this is officer David from Chase Bank Fraud Prevention. We flagged suspicious transactions on your account.';
+    // Initial Caller Opening Line
+    const opening = callData.callerSpeech || callData.openingLine || 'Hello, this is fraud prevention calling regarding suspicious activity on your account.';
     const initialDialogue = [{ sender: 'caller', text: opening, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }];
     setDialogueHistory(initialDialogue);
 
@@ -671,13 +726,16 @@ export default function VoiceCallSimulation({
   // Dynamic status text for caller line matching Image 2
   const activeStatusText = useMemo(() => {
     if (isAttackerSpeaking) return 'Speaking...';
+    if (isDetectiveMode) {
+      return callDuration > 0 ? formattedDuration : 'Connected';
+    }
     if (isAiResponding) return 'Calling...';
     if (isMuted) return 'Muted';
     if (isListening) {
       return isUserSpeaking ? 'Listening to you...' : 'Listening...';
     }
     return callDuration > 0 ? formattedDuration : 'Calling...';
-  }, [callDuration, formattedDuration, isAiResponding, isAttackerSpeaking, isListening, isMuted, isUserSpeaking]);
+  }, [callDuration, formattedDuration, isAiResponding, isAttackerSpeaking, isDetectiveMode, isListening, isMuted, isUserSpeaking]);
 
   return (
     <div
@@ -809,56 +867,75 @@ export default function VoiceCallSimulation({
             </h2>
           </div>
 
-          {/* Quick preset collapse toggle (Discreet testing helper for non-mic users) */}
-          <div className="flex flex-col items-center justify-center shrink-0 my-1">
-            <button
-              onClick={() => setShowQuickPresets(prev => !prev)}
-              className="text-[11px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1 transition-colors py-0.5 cursor-pointer"
-              title="Toggle simulated preset voice inputs"
-            >
-              <span>{showQuickPresets ? 'Hide Responses' : 'Simulate Voice Input'}</span>
-              {showQuickPresets ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
+          {/* In Cyber Detective Mode: Discreet Replay button in active call view (Audio only, no transcript) */}
+          {isDetectiveMode ? (
+            <div className="flex items-center justify-center shrink-0 my-2">
+              <button
+                type="button"
+                disabled={isAttackerSpeaking}
+                onClick={() => {
+                  const opening = callData.callerSpeech || callData.openingLine || 'Hello, this is fraud prevention calling regarding your account.';
+                  speakText(opening);
+                }}
+                className="text-xs px-3.5 py-1.5 rounded-full bg-zinc-900 border border-zinc-700/80 text-sky-300 hover:bg-zinc-800 transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-md"
+                title="Replay caller voice statement"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Replay Call Audio</span>
+              </button>
+            </div>
+          ) : (
+            /* Quick preset collapse toggle (Discreet testing helper for non-mic users in Standard Simulation Mode) */
+            <div className="flex flex-col items-center justify-center shrink-0 my-1">
+              <button
+                onClick={() => setShowQuickPresets(prev => !prev)}
+                className="text-[11px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1 transition-colors py-0.5 cursor-pointer"
+                title="Toggle simulated preset voice inputs"
+              >
+                <span>{showQuickPresets ? 'Hide Responses' : 'Simulate Voice Input'}</span>
+                {showQuickPresets ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
 
-            {showQuickPresets && (
-              <div className="w-full max-w-xs space-y-1.5 py-2 animate-in fade-in duration-150">
-                <div className="flex flex-wrap gap-1.5 justify-center">
-                  {presetResponses.map((p, i) => (
+              {showQuickPresets && (
+                <div className="w-full max-w-xs space-y-1.5 py-2 animate-in fade-in duration-150">
+                  <div className="flex flex-wrap gap-1.5 justify-center">
+                    {presetResponses.map((p, i) => (
+                      <button
+                        key={i}
+                        disabled={isAiResponding}
+                        onClick={() => handleUserSpeech(p.text)}
+                        className="text-[10px] px-2.5 py-1 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition-colors"
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 pt-1">
+                    <input
+                      type="text"
+                      value={userTextInput}
+                      onChange={(e) => setUserTextInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleUserSpeech(userTextInput)}
+                      placeholder="Type speech response..."
+                      className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-3 py-1.5 text-xs text-white placeholder-zinc-500 outline-none focus:border-sky-500"
+                    />
                     <button
-                      key={i}
-                      disabled={isAiResponding}
-                      onClick={() => handleUserSpeech(p.text)}
-                      className="text-[10px] px-2.5 py-1 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition-colors"
+                      onClick={() => handleUserSpeech(userTextInput)}
+                      disabled={!userTextInput.trim() || isAiResponding}
+                      className="p-1.5 bg-sky-600 disabled:opacity-40 hover:bg-sky-500 text-white rounded-full transition-colors cursor-pointer"
                     >
-                      {p.label}
+                      <Send className="w-3 h-3" />
                     </button>
-                  ))}
+                  </div>
                 </div>
+              )}
 
-                <div className="flex items-center gap-1.5 pt-1">
-                  <input
-                    type="text"
-                    value={userTextInput}
-                    onChange={(e) => setUserTextInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleUserSpeech(userTextInput)}
-                    placeholder="Type speech response..."
-                    className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-3 py-1.5 text-xs text-white placeholder-zinc-500 outline-none focus:border-sky-500"
-                  />
-                  <button
-                    onClick={() => handleUserSpeech(userTextInput)}
-                    disabled={!userTextInput.trim() || isAiResponding}
-                    className="p-1.5 bg-sky-600 disabled:opacity-40 hover:bg-sky-500 text-white rounded-full transition-colors cursor-pointer"
-                  >
-                    <Send className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {speechError && (
-              <p className="text-[10px] text-amber-400 text-center truncate max-w-xs mt-1">{speechError}</p>
-            )}
-          </div>
+              {speechError && (
+                <p className="text-[10px] text-amber-400 text-center truncate max-w-xs mt-1">{speechError}</p>
+              )}
+            </div>
+          )}
 
           {/* Bottom Native Call Control Grid (3x3 Matrix matching Image 2) */}
           <div className="w-full max-w-xs mx-auto mt-auto space-y-5">

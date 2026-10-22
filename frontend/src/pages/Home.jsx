@@ -11,7 +11,8 @@ import {
   Cpu,
   Mic,
   MicOff,
-  Languages
+  Languages,
+  Search
 } from 'lucide-react';
 
 export const SUPPORTED_LANGUAGES = [
@@ -60,8 +61,11 @@ const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp
 
 export default function Home({
   onGenerateScenario,
-  initialPrompt = ''
+  onStartDetectiveChallenge,
+  initialPrompt = '',
+  initialMode = 'standard'
 }) {
+  const [simulationMode, setSimulationMode] = useState(initialMode); // 'standard' | 'detective'
   const [prompt, setPrompt] = useState(initialPrompt);
   const [images, setImages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -348,16 +352,47 @@ export default function Home({
     if (e) e.preventDefault();
     if (!isFormValid) return;
 
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (_) {}
-    }
+    stopAllRecording();
     setIsListening(false);
-
     setIsLoading(true);
     setErrorMessage(null);
 
+    // MODE: CYBER DETECTIVE MODE (3-Round Real vs Fake Triage Challenge)
+    if (simulationMode === 'detective') {
+      try {
+        const response = await fetch('/api/detective/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: trimmedPrompt,
+            language: selectedLanguage,
+            channel: 'auto'
+          })
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          const errText = data.error || `Detective challenge generation failed with status ${response.status}`;
+          throw new Error(errText);
+        }
+
+        if (onStartDetectiveChallenge) {
+          onStartDetectiveChallenge(data.challenge, {
+            prompt: trimmedPrompt,
+            language: selectedLanguage,
+            mode: 'detective'
+          });
+        }
+      } catch (err) {
+        console.error('[Detective Generation Failed]:', err);
+        setErrorMessage(err.message || 'Unable to generate detective challenge. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // MODE: STANDARD ATTACK SIMULATION MODE (Existing Untouched Flow)
     try {
       const formData = new FormData();
       formData.append('prompt', trimmedPrompt);
@@ -447,17 +482,76 @@ export default function Home({
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8 flex flex-col gap-8">
-        {/* Intro Hero */}
-        <section className="text-center space-y-3">
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Design and Launch Attack Simulations
-          </h2>
-          <p className="text-sm sm:text-base text-gray-400 max-w-2xl mx-auto">
-            Describe any social engineering attack in natural language. Our AI automatically classifies the threat, predicts the optimal simulation channel, and constructs interactive defense rules.
-          </p>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-950/50 border border-blue-500/30 text-blue-300 text-xs font-medium">
-            <Cpu className="w-3.5 h-3.5 text-blue-400" />
-            <span>Autonomous Channel Prediction & Termination Rules Engine</span>
+        {/* Mode Selector Toggle */}
+        <section className="flex flex-col items-center gap-4">
+          <div className="inline-flex p-1.5 rounded-2xl bg-gray-900 border border-gray-800 shadow-xl">
+            <button
+              type="button"
+              data-testid="mode-standard-btn"
+              onClick={() => {
+                setSimulationMode('standard');
+                setErrorMessage(null);
+              }}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                simulationMode === 'standard'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-1 ring-blue-400'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+              }`}
+            >
+              <Shield className="w-4 h-4 text-blue-300" />
+              <span>Standard Mode</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="mode-detective-btn"
+              onClick={() => {
+                setSimulationMode('detective');
+                setErrorMessage(null);
+              }}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+                simulationMode === 'detective'
+                  ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30 ring-1 ring-amber-400'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+              }`}
+            >
+              <Search className="w-4 h-4 text-amber-300" />
+              <span>Cyber Detective Mode</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-700/60 font-mono uppercase tracking-wider">
+                3-Round Triage
+              </span>
+            </button>
+          </div>
+
+          {/* Intro Hero Content adapts to Mode */}
+          <div className="text-center space-y-2.5 max-w-2xl mx-auto">
+            {simulationMode === 'detective' ? (
+              <>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center justify-center gap-2">
+                  <span>Cyber Detective: Real vs. Fake Arena</span>
+                </h2>
+                <p className="text-sm sm:text-base text-gray-400 leading-relaxed">
+                  Put your triage instincts to the test across 3 interactive rounds. The AI generates a realistic mix of authentic communications and malicious attacks. Spot the forensic clues to win!
+                </p>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/50 border border-amber-500/30 text-amber-300 text-xs font-medium">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>3-Round Triage • Forensic Evidence Breakdown • 100-Point Score</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  Design and Launch Attack Simulations
+                </h2>
+                <p className="text-sm sm:text-base text-gray-400 leading-relaxed">
+                  Describe any social engineering attack in natural language. Our AI automatically classifies the threat, predicts the optimal simulation channel, and constructs interactive defense rules.
+                </p>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-950/50 border border-blue-500/30 text-blue-300 text-xs font-medium">
+                  <Cpu className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Autonomous Channel Prediction & Termination Rules Engine</span>
+                </div>
+              </>
+            )}
           </div>
         </section>
 
@@ -754,14 +848,26 @@ export default function Home({
               disabled={!isFormValid}
               className={`w-full py-3.5 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg ${
                 isFormValid
-                  ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20 hover:shadow-blue-500/30 cursor-pointer'
+                  ? simulationMode === 'detective'
+                    ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20 hover:shadow-amber-600/30 cursor-pointer ring-1 ring-amber-400/50'
+                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20 hover:shadow-blue-500/30 cursor-pointer'
                   : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-800'
               }`}
             >
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Generating scenario with AI...</span>
+                  <span>
+                    {simulationMode === 'detective'
+                      ? 'Constructing 3-Round Detective Challenge with AI...'
+                      : 'Generating scenario with AI...'}
+                  </span>
+                </>
+              ) : simulationMode === 'detective' ? (
+                <>
+                  <Search className="w-4 h-4 text-amber-200" />
+                  <span>Start Cyber Detective Challenge (3 Rounds)</span>
+                  <ArrowRight className="w-4 h-4 text-amber-200" />
                 </>
               ) : (
                 <>
