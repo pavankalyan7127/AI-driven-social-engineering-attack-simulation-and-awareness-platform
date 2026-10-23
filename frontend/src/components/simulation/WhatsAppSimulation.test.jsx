@@ -110,8 +110,8 @@ describe('WhatsAppSimulation Component', () => {
 
     expect(screen.getByTestId('whatsapp-options-menu')).toBeInTheDocument();
 
-    // Click Block option
-    const blockBtn = screen.getByRole('button', { name: /Block/i });
+    // Click Block option from menu
+    const blockBtn = screen.getByTestId('whatsapp-menu-block-btn');
     fireEvent.click(blockBtn);
 
     expect(handleAction).toHaveBeenCalledWith(
@@ -119,6 +119,63 @@ describe('WhatsAppSimulation Component', () => {
         eventType: 'user_blocked_sender'
       })
     );
+
+    expect(handleComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'safe_exit',
+        action: 'user_blocked_sender'
+      })
+    );
+  });
+
+  it('sanitizes contact name by removing "(Impersonator)" meta-tag and shows unknown contact safety banner', () => {
+    const impersonationScenario = {
+      scenarioId: 'scen-wa-surya-impersonator',
+      channel: 'whatsapp',
+      title: 'Friend Surya Airport Emergency',
+      conversations: [
+        {
+          id: 'conv-surya',
+          isTarget: true,
+          contact: {
+            name: 'Surya (Impersonator)',
+            phone: '+91 94421 88902',
+            isVerified: false
+          },
+          messages: [
+            {
+              id: 'm1',
+              sender: 'contact',
+              text: 'Hey, its Surya. My phone got stolen and I need $300 via UPI.',
+              timestamp: '10:02 AM'
+            }
+          ]
+        }
+      ]
+    };
+
+    const handleComplete = vi.fn();
+
+    render(
+      <WhatsAppSimulation
+        scenario={impersonationScenario}
+        sessionId="test-sess-surya"
+        onAction={vi.fn()}
+        onComplete={handleComplete}
+      />
+    );
+
+    // Verify contact name has "(Impersonator)" cleanly stripped
+    expect(screen.queryByText(/Surya \(Impersonator\)/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText('Surya').length).toBeGreaterThan(0);
+
+    // Verify authentic WhatsApp unknown contact safety prompt is rendered
+    expect(screen.getByTestId('whatsapp-unknown-contact-banner')).toBeInTheDocument();
+    expect(screen.getByText(/This is from an unknown contact, do you trust this person\?/i)).toBeInTheDocument();
+
+    // Verify Block button on banner functions as safe_exit
+    const bannerBlockBtn = screen.getByTestId('whatsapp-banner-block-btn');
+    fireEvent.click(bannerBlockBtn);
 
     expect(handleComplete).toHaveBeenCalledWith(
       expect.objectContaining({

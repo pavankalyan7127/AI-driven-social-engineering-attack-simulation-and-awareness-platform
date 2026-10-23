@@ -146,6 +146,140 @@ describe('Cyber Detective Mode - Frontend Component Tests', () => {
       expect(screen.getByText(/Submit Final Triage/i)).toBeInTheDocument();
     });
 
+    it('preserves active call state in Detective Mode when clues drawer is toggled or verdict clicked', async () => {
+      const callChallenge = {
+        challengeId: 'det-call-01',
+        scenarioTitle: 'Bank Fraud Phone Triage',
+        channel: 'call',
+        rounds: [
+          {
+            roundNumber: 1,
+            type: 'FAKE',
+            title: 'Urgent Wire Transfer Call',
+            scenarioData: {
+              callerName: 'Fraud Security Agent',
+              callerNumber: '+1 (800) 555-0199',
+              callerSpeech: 'Hello, this is fraud prevention. We detected an unauthorized wire transfer.',
+              openingLine: 'Hello, this is fraud prevention. We detected an unauthorized wire transfer.'
+            },
+            clues: {
+              isFake: true,
+              primaryIndicator: 'Urgent demand for verification code',
+              redFlagsOrSafeguards: ['Sense of urgency'],
+              forensicExplanation: 'Vishing attempt'
+            }
+          }
+        ],
+        channelCheatSheet: {
+          channel: 'call',
+          whatToLookFor: ['Caller ID spoofing'],
+          realMarkers: ['Official callback numbers'],
+          fakeMarkers: ['Demanding immediate card info']
+        }
+      };
+
+      render(
+        <DetectiveChallengeView
+          challenge={callChallenge}
+          onFinishChallenge={vi.fn()}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Check incoming call UI is rendered
+      expect(screen.getByText('Fraud Security Agent')).toBeInTheDocument();
+      const answerBtn = screen.getByTestId('call-answer-btn');
+      fireEvent.click(answerBtn);
+
+      // Call is now connected - call-hangup-btn is visible
+      expect(screen.getByTestId('call-hangup-btn')).toBeInTheDocument();
+
+      // Toggle clues guide
+      const cluesBtn = screen.getByTestId('toggle-cheatsheet-btn');
+      fireEvent.click(cluesBtn);
+      expect(screen.getByTestId('detective-cheatsheet-drawer')).toBeInTheDocument();
+
+      // Verify the call is STILL connected and was not reset to incoming
+      expect(screen.getByTestId('call-hangup-btn')).toBeInTheDocument();
+      expect(screen.queryByTestId('call-answer-btn')).not.toBeInTheDocument();
+
+      // Click verdict button
+      const attackBtn = screen.getByTestId('verdict-attack-btn');
+      fireEvent.click(attackBtn);
+
+      // Verify the call is STILL connected and was not reset
+      expect(screen.getByTestId('call-hangup-btn')).toBeInTheDocument();
+      expect(screen.queryByTestId('call-answer-btn')).not.toBeInTheDocument();
+    });
+
+    it('renders Instagram triage challenge full-width and strips "(Impersonator)" from contact name', () => {
+      const instaChallenge = {
+        challengeId: 'det-insta-01',
+        scenarioTitle: 'Instagram Copyright Violation Triage',
+        channel: 'instagram',
+        rounds: [
+          {
+            roundNumber: 1,
+            type: 'FAKE',
+            title: 'Copyright Infringement Notice DM',
+            scenarioData: {
+              conversations: [
+                {
+                  id: 'c-meta',
+                  isTarget: true,
+                  contact: {
+                    name: 'Meta Copyright Support (Impersonator)',
+                    handle: 'meta_copyright_help',
+                    isVerified: false
+                  },
+                  messages: [
+                    {
+                      id: 'm1',
+                      sender: 'contact',
+                      text: 'Your account will be deleted within 24 hours. Submit appeal at link.',
+                      timestamp: '10:00 AM'
+                    }
+                  ]
+                }
+              ]
+            },
+            clues: {
+              isFake: true,
+              primaryIndicator: 'Urgent threat via Instagram DM',
+              redFlagsOrSafeguards: ['Unverified DM account'],
+              forensicExplanation: 'Phishing attempt'
+            }
+          }
+        ],
+        channelCheatSheet: {
+          channel: 'instagram',
+          whatToLookFor: ['Blue verification badge'],
+          realMarkers: ['Official Meta app notifications tab'],
+          fakeMarkers: ['Direct messages asking for credentials']
+        }
+      };
+
+      const { container } = render(
+        <DetectiveChallengeView
+          challenge={instaChallenge}
+          onFinishChallenge={vi.fn()}
+          onExit={vi.fn()}
+        />
+      );
+
+      // Verify contact name has "(Impersonator)" stripped
+      expect(screen.queryByText(/Meta Copyright Support \(Impersonator\)/i)).not.toBeInTheDocument();
+      expect(screen.getAllByText('Meta Copyright Support').length).toBeGreaterThan(0);
+
+      // Verify the round container has "w-full" and NOT max-w-[420px]
+      const roundContainer = screen.getByTestId('detective-round-container');
+      expect(roundContainer).toHaveClass('w-full');
+      expect(roundContainer).not.toHaveClass('max-w-[420px]');
+
+      // Verify the Instagram direct message scenario text is displayed in chat
+      expect(screen.getAllByText(/Your account will be deleted within 24 hours/i).length).toBeGreaterThan(0);
+    });
+
     it('submits completed rounds to /api/detective/score and triggers onFinishChallenge callback', async () => {
       const mockFinish = vi.fn();
       const mockReport = {

@@ -30,6 +30,18 @@ import {
 } from 'lucide-react';
 
 /**
+ * Sanitizes contact/sender names to remove spoiler meta-tags like "(Impersonator)",
+ * "(Attacker)", "(Fake)", "(Scammer)", etc.
+ */
+export function cleanContactName(name) {
+  if (!name || typeof name !== 'string') return name || '';
+  return name
+    .replace(/\s*[\(\[\{](?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)[\)\]\}]/gi, '')
+    .replace(/\s*-\s*(?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)/gi, '')
+    .trim();
+}
+
+/**
  * InstagramSimulation Component
  * 
  * Pixel-perfect Instagram Direct Messages (DM) attack simulation interface.
@@ -77,7 +89,8 @@ export default function InstagramSimulation({
   const initialConversations = useMemo(() => {
     if (Array.isArray(scenario.conversations) && scenario.conversations.length > 0) {
       return scenario.conversations.map((c, idx) => {
-        const name = c.contact?.name || c.contactName || c.sender?.name || scenario.contactName || 'Instagram Contact';
+        const rawName = c.contact?.name || c.contactName || c.sender?.name || scenario.contactName || 'Instagram Contact';
+        const name = cleanContactName(rawName);
         const handle = c.contact?.handle || c.handle || (name ? name.toLowerCase().replace(/[^a-z0-9_]/g, '_') : 'insta_user');
         const isVerified = Boolean(
           c.contact?.isVerified !== undefined
@@ -94,12 +107,12 @@ export default function InstagramSimulation({
           isTarget: c.isTarget !== undefined ? c.isTarget : (idx === 0),
           isVerified,
           contact: {
-            name,
             handle,
             avatar: c.contact?.avatar || (name ? name.charAt(0).toUpperCase() : 'I'),
             avatarBg: c.contact?.avatarBg || (isVerified ? 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white' : 'bg-gradient-to-tr from-amber-500 to-pink-500 text-white'),
             status: c.contact?.status || (isVerified ? 'Verified Account' : 'Active now'),
             ...(c.contact || {}),
+            name,
             isVerified
           },
           messages: Array.isArray(c.messages) ? c.messages : []

@@ -29,6 +29,18 @@ import {
 } from 'lucide-react';
 
 /**
+ * Sanitizes contact/sender names to remove spoiler meta-tags like "(Impersonator)",
+ * "(Attacker)", "(Fake)", "(Scammer)", etc.
+ */
+export function cleanContactName(name) {
+  if (!name || typeof name !== 'string') return name || '';
+  return name
+    .replace(/\s*[\(\[\{](?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)[\)\]\}]/gi, '')
+    .replace(/\s*-\s*(?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)/gi, '')
+    .trim();
+}
+
+/**
  * ChatSimulation Component
  * 
  * Reusable simulation module for AI-driven social engineering attack training.
@@ -76,6 +88,12 @@ export default function ChatSimulation({
     if (Array.isArray(scenario.conversations) && scenario.conversations.length > 0) {
       return scenario.conversations.map(c => ({
         ...c,
+        contact: c.contact ? {
+          ...c.contact,
+          name: cleanContactName(c.contact.name || c.contactName || c.sender?.name || scenario.contactName || 'External Contact')
+        } : {
+          name: cleanContactName(c.contactName || c.sender?.name || scenario.contactName || 'External Contact')
+        },
         messages: Array.isArray(c.messages) ? [...c.messages] : []
       }));
     }
@@ -85,7 +103,7 @@ export default function ChatSimulation({
         id: targetId,
         isTarget: true,
         contact: {
-          name: scenario.contactName || 'External Contact',
+          name: cleanContactName(scenario.contactName || 'External Contact'),
           handle: '+1 (555) 019-2831',
           avatar: '?',
           avatarBg: 'bg-red-700 text-white',

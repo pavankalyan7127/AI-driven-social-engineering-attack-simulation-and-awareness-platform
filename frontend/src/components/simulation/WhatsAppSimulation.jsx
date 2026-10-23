@@ -32,6 +32,18 @@ import {
 } from 'lucide-react';
 
 /**
+ * Sanitizes contact/sender names to remove spoiler meta-tags like "(Impersonator)",
+ * "(Attacker)", "(Fake)", "(Scammer)", etc. that real WhatsApp never displays.
+ */
+export function cleanContactName(name) {
+  if (!name || typeof name !== 'string') return name || '';
+  return name
+    .replace(/\s*[\(\[\{](?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)[\)\]\}]/gi, '')
+    .replace(/\s*-\s*(?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)/gi, '')
+    .trim();
+}
+
+/**
  * WhatsAppSimulation Component
  * 
  * Authentic, pixel-perfect WhatsApp Web attack simulation interface.
@@ -80,7 +92,8 @@ export default function WhatsAppSimulation({
   const initialConversations = useMemo(() => {
     if (Array.isArray(scenario.conversations) && scenario.conversations.length > 0) {
       return scenario.conversations.map((c, idx) => {
-        const name = c.contact?.name || c.contactName || c.sender?.name || scenario.contactName || 'WhatsApp Contact';
+        const rawName = c.contact?.name || c.contactName || c.sender?.name || scenario.contactName || 'WhatsApp Contact';
+        const name = cleanContactName(rawName);
         const phone = c.contact?.phone || c.phoneNumber || c.sender?.phoneNumber || '+91 94421 88902';
         const isVerified = Boolean(
           c.contact?.isVerified !== undefined
@@ -97,13 +110,13 @@ export default function WhatsAppSimulation({
           isTarget: c.isTarget !== undefined ? c.isTarget : (idx === 0),
           isVerified,
           contact: {
-            name,
             phone,
             avatar: c.contact?.avatar || (name ? name.charAt(0).toUpperCase() : 'W'),
             avatarBg: c.contact?.avatarBg || (isVerified ? 'bg-emerald-700 text-white' : 'bg-[#6b7b85] text-white'),
             status: c.contact?.status || (isVerified ? 'Official business account' : 'online'),
             about: c.contact?.about || (isVerified ? 'Official Verified Business Account' : 'Hey there! I am using WhatsApp.'),
             ...(c.contact || {}),
+            name,
             isVerified
           },
           messages: Array.isArray(c.messages) ? c.messages : []
@@ -270,6 +283,7 @@ export default function WhatsAppSimulation({
   const [linkNotice, setLinkNotice] = useState(null);
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [compromisedNotice, setCompromisedNotice] = useState(null);
+  const [dismissedUnknownBanners, setDismissedUnknownBanners] = useState({});
 
   const menuRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -331,6 +345,14 @@ export default function WhatsAppSimulation({
   const activeConversation = useMemo(() => {
     return conversations.find(c => c.id === activeConvId) || null;
   }, [conversations, activeConvId]);
+
+  // Is active contact unknown / unverified (for authentic WhatsApp safety prompt)
+  const isUnknownContact = Boolean(
+    activeConversation &&
+    !activeConversation.contact?.isVerified &&
+    !activeConversation.isVerified &&
+    !dismissedUnknownBanners[activeConversation.id]
+  );
 
   // Auto-scroll messages
   useEffect(() => {
@@ -974,6 +996,7 @@ export default function WhatsAppSimulation({
                       {/* DEFENSIVE TERMINATION 2: BLOCK */}
                       <button
                         onClick={handleBlockContact}
+                        data-testid="whatsapp-menu-block-btn"
                         className="w-full px-4 py-2 hover:bg-red-950/40 text-left text-red-400 font-medium transition-colors flex items-center justify-between"
                       >
                         <span>Block</span>
@@ -1028,6 +1051,45 @@ export default function WhatsAppSimulation({
                   Today
                 </span>
               </div>
+
+              {/* Authentic WhatsApp Unknown Contact Safety Prompt */}
+              {isUnknownContact && (
+                <div
+                  data-testid="whatsapp-unknown-contact-banner"
+                  className="mx-auto max-w-sm my-3 p-3.5 bg-[#182229] border border-[#2a3942] rounded-xl shadow-lg text-center animate-in fade-in duration-200"
+                >
+                  <div className="flex items-center justify-center gap-1.5 text-[#e9edef] text-xs font-semibold mb-1">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>This sender is not in your contacts</span>
+                  </div>
+                  <p className="text-[12px] text-[#8696a0] leading-relaxed mb-3">
+                    This is from an unknown contact, do you trust this person?
+                  </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      onClick={handleBlockContact}
+                      data-testid="whatsapp-banner-block-btn"
+                      className="px-3 py-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-800/60 text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      Block
+                    </button>
+                    <button
+                      onClick={() => setIsReportModalOpen(true)}
+                      data-testid="whatsapp-banner-report-btn"
+                      className="px-3 py-1.5 rounded-lg bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border border-amber-800/60 text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      Report
+                    </button>
+                    <button
+                      onClick={() => setDismissedUnknownBanners(prev => ({ ...prev, [activeConversation.id]: true }))}
+                      data-testid="whatsapp-banner-add-btn"
+                      className="px-3 py-1.5 rounded-lg bg-[#00a884]/15 hover:bg-[#00a884]/25 text-[#00a884] border border-[#00a884]/40 text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      Add to contacts
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Message Bubbles */}
               {(activeConversation.messages || []).map((msg) => {

@@ -13,6 +13,18 @@ import {
 
 export const ALLOWED_CHANNELS = ['email', 'chat', 'sms', 'website', 'whatsapp', 'instagram', 'telegram', 'call'];
 
+/**
+ * Sanitizes contact/sender/caller names to remove spoiler meta-tags like "(Impersonator)",
+ * "(Attacker)", "(Fake)", "(Scammer)", etc. that real-world platforms never display.
+ */
+export function cleanContactName(name) {
+  if (!name || typeof name !== 'string') return name || '';
+  return name
+    .replace(/\s*[\(\[\{](?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)[\)\]\}]/gi, '')
+    .replace(/\s*-\s*(?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)/gi, '')
+    .trim();
+}
+
 export const ALLOWED_WEBSITE_LAYOUTS = [
   'login-style',
   'account-verification',
@@ -222,7 +234,11 @@ function validateChatScenario(scenario, errors) {
 
     if (!conv.contact || typeof conv.contact !== 'object' || !conv.contact.name) {
       errors.push(`conversations[${idx}] must contain a "contact" object with a "name"`);
+    } else {
+      conv.contact.name = cleanContactName(conv.contact.name);
     }
+    if (conv.contactName) conv.contactName = cleanContactName(conv.contactName);
+    if (conv.sender?.name) conv.sender.name = cleanContactName(conv.sender.name);
 
     if (!Array.isArray(conv.messages) || conv.messages.length === 0) {
       errors.push(`conversations[${idx}] must contain a non-empty "messages" array`);
@@ -267,7 +283,10 @@ function validateSmsScenario(scenario, errors) {
 
     if (!conv.sender || typeof conv.sender !== 'object' || (!conv.sender.name && !conv.sender.phoneNumber)) {
       errors.push(`conversations[${idx}] must contain a "sender" object with "name" or "phoneNumber"`);
+    } else if (conv.sender.name) {
+      conv.sender.name = cleanContactName(conv.sender.name);
     }
+    if (conv.contactName) conv.contactName = cleanContactName(conv.contactName);
 
     if (!Array.isArray(conv.messages) || conv.messages.length === 0) {
       errors.push(`conversations[${idx}] must contain a non-empty "messages" array`);
@@ -436,7 +455,10 @@ function validateCallScenario(scenario, errors) {
 
   if (!call.callerName || typeof call.callerName !== 'string') {
     call.callerName = scenario.title || 'Unknown Caller';
+  } else {
+    call.callerName = cleanContactName(call.callerName);
   }
+  if (scenario.contactName) scenario.contactName = cleanContactName(scenario.contactName);
 
   if (!call.callerNumber || typeof call.callerNumber !== 'string') {
     call.callerNumber = '+1 (800) 555-0199';

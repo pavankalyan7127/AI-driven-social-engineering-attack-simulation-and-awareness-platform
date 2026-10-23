@@ -1,5 +1,9 @@
 import React, { useState, useRef } from 'react';
 import Home from './pages/Home';
+import LearnView from './pages/LearnView';
+import SimulationsView from './pages/SimulationsView';
+import HistoryView from './pages/HistoryView';
+import Header from './components/common/Header';
 import SimulationRenderer from './components/simulation/SimulationRenderer';
 import { sampleScenario } from './data/sampleScenario';
 import { sampleChatScenario } from './data/sampleChatScenario';
@@ -561,6 +565,63 @@ export default function App() {
     setEvents([]);
   };
 
+  if (activeView === 'learn') {
+    return (
+      <div className="min-h-screen bg-[#070b12] text-gray-100 flex flex-col font-sans select-none">
+        <Header
+          activeTab="learn"
+          onNavigate={(tab) => {
+            if (tab === 'home') setActiveView('home');
+            else if (tab === 'simulations') setActiveView('simulations_info');
+            else if (tab === 'history') setActiveView('history');
+            else setActiveView('learn');
+          }}
+        />
+        <div className="flex-1 overflow-y-auto">
+          <LearnView onBackToHome={() => setActiveView('home')} />
+        </div>
+      </div>
+    );
+  }
+
+  if (activeView === 'simulations_info') {
+    return (
+      <div className="min-h-screen bg-[#070b12] text-gray-100 flex flex-col font-sans select-none">
+        <Header
+          activeTab="simulations"
+          onNavigate={(tab) => {
+            if (tab === 'home') setActiveView('home');
+            else if (tab === 'learn') setActiveView('learn');
+            else if (tab === 'history') setActiveView('history');
+            else setActiveView('simulations_info');
+          }}
+        />
+        <div className="flex-1 overflow-y-auto">
+          <SimulationsView onBackToHome={() => setActiveView('home')} />
+        </div>
+      </div>
+    );
+  }
+
+  if (activeView === 'history') {
+    return (
+      <div className="min-h-screen bg-[#070b12] text-gray-100 flex flex-col font-sans select-none">
+        <Header
+          activeTab="history"
+          onNavigate={(tab) => {
+            if (tab === 'home') setActiveView('home');
+            else if (tab === 'simulations') setActiveView('simulations_info');
+            else if (tab === 'learn') setActiveView('learn');
+            else setActiveView('history');
+          }}
+        />
+        <div className="flex-1 overflow-y-auto">
+          <HistoryView onBackToHome={() => setActiveView('home')} />
+        </div>
+      </div>
+    );
+  }
+
   if (activeView === 'home') {
     return (
       <Home
@@ -569,6 +630,12 @@ export default function App() {
         initialPrompt={savedPrompt}
         initialChannel={savedChannel}
         initialMode={activeMode}
+        onNavigateNav={(tab) => {
+          if (tab === 'learn') setActiveView('learn');
+          else if (tab === 'simulations') setActiveView('simulations_info');
+          else if (tab === 'history') setActiveView('history');
+          else setActiveView('home');
+        }}
       />
     );
   }

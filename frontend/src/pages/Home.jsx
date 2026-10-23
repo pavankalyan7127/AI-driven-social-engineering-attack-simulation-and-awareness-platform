@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import Header from '../components/common/Header';
 import {
   Shield,
   Upload,
@@ -12,7 +13,14 @@ import {
   Mic,
   MicOff,
   Languages,
-  Search
+  Search,
+  MessageSquare,
+  BookOpen,
+  TrendingUp,
+  Mail,
+  Smartphone,
+  Globe,
+  Radio
 } from 'lucide-react';
 
 export const SUPPORTED_LANGUAGES = [
@@ -63,7 +71,8 @@ export default function Home({
   onGenerateScenario,
   onStartDetectiveChallenge,
   initialPrompt = '',
-  initialMode = 'standard'
+  initialMode = 'standard',
+  onNavigateNav
 }) {
   const [simulationMode, setSimulationMode] = useState(initialMode); // 'standard' | 'detective'
   const [prompt, setPrompt] = useState(initialPrompt);
@@ -458,432 +467,524 @@ export default function Home({
     }
   };
 
+  const [activeNav, setActiveNav] = useState('home');
+
+  const handleNavClick = (tabKey) => {
+    setActiveNav(tabKey);
+    if (typeof onNavigateNav === 'function') {
+      onNavigateNav(tabKey);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 text-gray-100 flex flex-col font-sans">
-      {/* Top Navigation / Brand */}
-      <header className="border-b border-gray-800 bg-gray-950/70 backdrop-blur-md px-6 py-4 flex items-center justify-between sticky top-0 z-20">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Shield className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-              AI Social Engineering Simulator
-              <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full font-medium">
-                Groq Powered
-              </span>
-            </h1>
-            <p className="text-xs text-gray-400">
-              Interactive Attack Simulation & Cybersecurity Awareness Engine
+    <div className="h-screen max-h-screen overflow-hidden bg-[#070b12] text-gray-100 flex flex-col font-sans select-none">
+      {/* Top Navigation Bar Matching Image */}
+      <Header activeTab={activeNav} onNavigate={handleNavClick} />
+
+      {/* Main Content: Split 2-Column Hero + Form Layout */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-6 sm:px-10 py-2.5 sm:py-3.5 flex flex-col justify-between overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          {/* Left Column: Awareness Headline & Value Props */}
+          <div className="lg:col-span-6 space-y-3 pt-1">
+            {/* Pill Badge */}
+            <div className="inline-flex items-center gap-2 px-3 py-0.5 rounded-full bg-[#111927] border border-blue-900/40 text-blue-300 text-[10px] font-semibold tracking-wider uppercase">
+              <span>BE AWARE</span>
+              <span className="text-gray-500">•</span>
+              <span>RECOGNIZE SCAMS</span>
+              <span className="text-gray-500">•</span>
+              <span>STAY SAFE ONLINE</span>
+            </div>
+
+            {/* Main Headline */}
+            <h2 className="text-2xl sm:text-3xl xl:text-4xl font-black text-white tracking-tight leading-[1.15]">
+              Learn to stay safe from <br className="hidden sm:inline" />
+              <span className="text-blue-500">online scams</span>
+            </h2>
+
+            {/* Paragraph description */}
+            <p className="text-xs text-gray-300 leading-relaxed max-w-lg">
+              Practice real-life situations like fake messages, calls and websites in a safe environment. Our AI creates simple and realistic simulations to help everyone — especially new and less experienced users — recognize scams and use phones and the internet more safely.
             </p>
-          </div>
-        </div>
-      </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-8 flex flex-col gap-8">
-        {/* Mode Selector Toggle */}
-        <section className="flex flex-col items-center gap-4">
-          <div className="inline-flex p-1.5 rounded-2xl bg-gray-900 border border-gray-800 shadow-xl">
-            <button
-              type="button"
-              data-testid="mode-standard-btn"
-              onClick={() => {
-                setSimulationMode('standard');
-                setErrorMessage(null);
-              }}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
-                simulationMode === 'standard'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-1 ring-blue-400'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
-              }`}
-            >
-              <Shield className="w-4 h-4 text-blue-300" />
-              <span>Standard Mode</span>
-            </button>
-
-            <button
-              type="button"
-              data-testid="mode-detective-btn"
-              onClick={() => {
-                setSimulationMode('detective');
-                setErrorMessage(null);
-              }}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
-                simulationMode === 'detective'
-                  ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30 ring-1 ring-amber-400'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
-              }`}
-            >
-              <Search className="w-4 h-4 text-amber-300" />
-              <span>Cyber Detective Mode</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-700/60 font-mono uppercase tracking-wider">
-                3-Round Triage
-              </span>
-            </button>
-          </div>
-
-          {/* Intro Hero Content adapts to Mode */}
-          <div className="text-center space-y-2.5 max-w-2xl mx-auto">
-            {simulationMode === 'detective' ? (
-              <>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center justify-center gap-2">
-                  <span>Cyber Detective: Real vs. Fake Arena</span>
-                </h2>
-                <p className="text-sm sm:text-base text-gray-400 leading-relaxed">
-                  Put your triage instincts to the test across 3 interactive rounds. The AI generates a realistic mix of authentic communications and malicious attacks. Spot the forensic clues to win!
-                </p>
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/50 border border-amber-500/30 text-amber-300 text-xs font-medium">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>3-Round Triage • Forensic Evidence Breakdown • 100-Point Score</span>
+            {/* 4 Feature Columns below description matching Image */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1.5">
+              {/* Feature 1 */}
+              <div className="flex flex-col gap-1.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-md">
+                  <Shield className="w-4 h-4" />
                 </div>
-              </>
-            ) : (
-              <>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-                  Design and Launch Attack Simulations
-                </h2>
-                <p className="text-sm sm:text-base text-gray-400 leading-relaxed">
-                  Describe any social engineering attack in natural language. Our AI automatically classifies the threat, predicts the optimal simulation channel, and constructs interactive defense rules.
-                </p>
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-950/50 border border-blue-500/30 text-blue-300 text-xs font-medium">
-                  <Cpu className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Autonomous Channel Prediction & Termination Rules Engine</span>
+                <div>
+                  <h4 className="text-[11px] font-bold text-white leading-tight">Realistic Scenarios</h4>
+                  <p className="text-[9.5px] text-gray-400 mt-0.5 leading-snug">Based on common real-world scams</p>
                 </div>
-              </>
-            )}
-          </div>
-        </section>
+              </div>
 
-        {/* Quick Presets */}
-        <section className="bg-gray-900/60 border border-gray-800 rounded-xl p-4">
-          <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Quick-Start Scenario Presets</span>
+              {/* Feature 2 */}
+              <div className="flex flex-col gap-1.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow-md">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-bold text-white leading-tight">Simple Language</h4>
+                  <p className="text-[9.5px] text-gray-400 mt-0.5 leading-snug">Easy to understand for everyone</p>
+                </div>
+              </div>
+
+              {/* Feature 3 */}
+              <div className="flex flex-col gap-1.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-600 flex items-center justify-center text-white shadow-md">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-bold text-white leading-tight">Learn by Practicing</h4>
+                  <p className="text-[9.5px] text-gray-400 mt-0.5 leading-snug">Build confidence through hands-on practice</p>
+                </div>
+              </div>
+
+              {/* Feature 4 */}
+              <div className="flex flex-col gap-1.5">
+                <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center text-white shadow-md">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-bold text-white leading-tight">Stay Safer Everyday</h4>
+                  <p className="text-[9.5px] text-gray-400 mt-0.5 leading-snug">Useful tips for using phones and the internet safely</p>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {PRESETS.map((preset, index) => (
-              <button
-                key={index}
-                type="button"
-                onClick={() => handleApplyPreset(preset)}
-                className="text-left p-3 rounded-lg bg-gray-950/60 hover:bg-gray-800/80 border border-gray-800 hover:border-gray-700 transition-all group flex flex-col justify-between gap-2"
-              >
-                <div className="text-xs font-semibold text-gray-200 group-hover:text-blue-400 flex items-center justify-between">
-                  <span>{preset.label}</span>
-                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
-                    {preset.hint}
+
+          {/* Right Column: "Create a Simulation" Card matching Image */}
+          <div className="lg:col-span-6 bg-[#0c121e] border border-gray-800/80 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3">
+            <div>
+              <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                Create a Simulation
+              </h3>
+              <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">
+                Describe a real-life situation in your own words.
+                <span className="hidden sm:inline"> You can mention a message, call, website or any suspicious activity.</span>
+              </p>
+            </div>
+
+            {/* Mode Selector Radio Cards matching Image */}
+            <div className="space-y-1.5">
+              <label className="block text-[10.5px] font-semibold text-gray-300">
+                Select Mode
+              </label>
+              <div className="grid grid-cols-2 gap-2.5">
+                {/* Standard Mode Pill */}
+                <button
+                  type="button"
+                  data-testid="mode-standard-btn"
+                  onClick={() => {
+                    setSimulationMode('standard');
+                    setErrorMessage(null);
+                  }}
+                  className={`p-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                    simulationMode === 'standard'
+                      ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-600/30 ring-1 ring-blue-400'
+                      : 'bg-[#121927] border-gray-800 text-gray-300 hover:border-gray-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 shrink-0" />
+                    <div>
+                      <div className="text-[11px] font-bold leading-tight">Standard Mode</div>
+                      <div className={`text-[9.5px] ${simulationMode === 'standard' ? 'text-blue-100' : 'text-gray-400'}`}>
+                        Interactive attack simulation
+                      </div>
+                    </div>
+                  </div>
+                  <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
+                    simulationMode === 'standard'
+                      ? 'border-white bg-white'
+                      : 'border-gray-600 bg-transparent'
+                  }`}>
+                    {simulationMode === 'standard' && <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
+                  </div>
+                </button>
+
+                {/* Cyber Detective Mode Pill */}
+                <button
+                  type="button"
+                  data-testid="mode-detective-btn"
+                  onClick={() => {
+                    setSimulationMode('detective');
+                    setErrorMessage(null);
+                  }}
+                  className={`p-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                    simulationMode === 'detective'
+                      ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-600/30 ring-1 ring-blue-400'
+                      : 'bg-[#121927] border-gray-800 text-gray-300 hover:border-gray-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Search className="w-4 h-4 shrink-0 text-amber-400" />
+                    <div>
+                      <div className="text-[11px] font-bold leading-tight">Detective Mode</div>
+                      <div className={`text-[9.5px] ${simulationMode === 'detective' ? 'text-blue-100' : 'text-gray-400'}`}>
+                        3-round triage challenge
+                      </div>
+                    </div>
+                  </div>
+                  <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
+                    simulationMode === 'detective'
+                      ? 'border-white bg-white'
+                      : 'border-gray-600 bg-transparent'
+                  }`}>
+                    {simulationMode === 'detective' && <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Generator Form */}
+            <form onSubmit={handleSubmit} className="space-y-2.5">
+              {/* Prompt Textarea */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="attack-prompt" className="text-[10.5px] font-semibold text-gray-300">
+                    Describe the Attack Scenario
+                  </label>
+                  <div className="flex items-center gap-2">
+                    {isListening && (
+                      <span className="flex items-center gap-1 text-[10px] text-red-400 font-medium animate-pulse">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
+                        Listening...
+                      </span>
+                    )}
+                    {isTranscribing && (
+                      <span className="flex items-center gap-1 text-[10px] text-blue-400 font-medium animate-pulse">
+                        <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                        Transcribing...
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <textarea
+                    id="attack-prompt"
+                    data-testid="prompt-input"
+                    rows={2}
+                    value={prompt}
+                    onChange={(e) => {
+                      setPrompt(e.target.value);
+                      setErrorMessage(null);
+                    }}
+                    placeholder="e.g. I got a message on WhatsApp saying I won a prize and asked me to click a link..."
+                    className="w-full bg-[#070b12] border border-gray-800 rounded-xl p-2.5 pb-6 text-xs text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-all resize-none min-h-[64px]"
+                  />
+
+                  {/* Character Counter inside bottom-right */}
+                  <span
+                    data-testid="char-counter"
+                    className="absolute bottom-1.5 right-2.5 text-[9.5px] font-mono text-gray-500 pointer-events-none"
+                  >
+                    {prompt.length} / 2000 chars
                   </span>
                 </div>
-                <div className="text-[11px] text-gray-500 line-clamp-2 leading-relaxed">
-                  {preset.prompt}
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
 
-        {/* Generator Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Prompt Input */}
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label
-                htmlFor="attack-prompt"
-                className="block text-sm font-semibold text-gray-200"
+                {voiceNotice && (
+                  <p data-testid="voice-notice" className="text-[10px] text-amber-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    <span>{voiceNotice}</span>
+                  </p>
+                )}
+                {isPromptTooShort && (
+                  <p className="text-[10px] text-amber-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    <span>Prompt is too short. Please provide at least 5 characters describing the scenario.</span>
+                  </p>
+                )}
+              </div>
+
+              {/* Add Reference Images (Optional) Dashed Box matching Image */}
+              <div
+                data-testid="image-dropzone"
+                onClick={() => fileInputRef.current?.click()}
+                className="border border-dashed border-gray-800 hover:border-gray-700 bg-[#070b12]/60 rounded-xl px-3 py-2 flex items-center justify-between gap-2.5 cursor-pointer transition-colors group"
               >
-                Describe the Attack Scenario
-              </label>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-[#121927] border border-gray-800 flex items-center justify-center text-gray-400 group-hover:text-blue-400 transition-colors">
+                    <Upload className="w-3 h-3" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-gray-300 block leading-tight">
+                      Add Reference Images (Optional)
+                    </span>
+                    <span className="text-[9.5px] text-gray-500 block leading-tight">
+                      Upload screenshots of messages, calls, or websites (Max 3 images, 5MB each)
+                    </span>
+                  </div>
+                </div>
 
-              <div className="flex items-center gap-2.5">
-                {/* Language Selector */}
-                <div className="flex items-center gap-1.5 bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg px-2.5 py-1 transition-colors">
-                  <Languages className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                {/* Voice Input Button */}
+                <button
+                  type="button"
+                  data-testid="voice-input-btn"
+                  disabled={isTranscribing}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleListening();
+                  }}
+                  title={isListening ? 'Stop mic' : 'Dictate with microphone'}
+                  className={`px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1.5 transition-all ${
+                    isListening
+                      ? 'bg-red-500/20 border-red-500 text-red-400 animate-pulse'
+                      : 'bg-[#121927] border-gray-800 text-gray-400 hover:text-blue-400 hover:border-blue-500/50'
+                  }`}
+                >
+                  {isListening ? (
+                    <>
+                      <MicOff className="w-3 h-3" />
+                      <span>Stop Mic</span>
+                      <span data-testid="listening-indicator" className="w-1.5 h-1.5 rounded-full bg-red-400 animate-ping inline-block ml-0.5" />
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-3 h-3" />
+                      <span>Voice Input</span>
+                    </>
+                  )}
+                </button>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  data-testid="image-input"
+                  multiple
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+              </div>
+
+              {/* Vision notice for OCR intelligence */}
+              <div
+                data-testid="vision-notice"
+                className="sr-only"
+              >
+                Smart OCR Vision Active: Upload screenshots of suspicious emails, chat messages, or fake websites. The AI will extract the text, branding, and attack tactics to build an authentic replica simulation.
+              </div>
+
+              {fileError && (
+                <p className="text-[10px] text-red-400 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  <span>{fileError}</span>
+                </p>
+              )}
+
+              {/* Thumbnails */}
+              {images.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  {images.map((img, idx) => (
+                    <div
+                      key={idx}
+                      className="relative rounded-lg overflow-hidden border border-gray-800 bg-[#070b12] flex items-center gap-1.5 p-1"
+                    >
+                      <img src={img.previewUrl} alt={img.name} className="w-6 h-6 object-cover rounded" />
+                      <span className="text-[9.5px] text-gray-300 max-w-[80px] truncate">{img.name}</span>
+                      <button
+                        type="button"
+                        title="Remove image"
+                        onClick={() => handleRemoveImage(idx)}
+                        className="p-0.5 text-gray-400 hover:text-red-400"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Error Banner */}
+              {errorMessage && (
+                <div data-testid="error-banner" className="p-2.5 rounded-xl bg-red-950/40 border border-red-800/60 flex items-center justify-between text-[11px] text-red-200">
+                  <span>{errorMessage}</span>
+                  <button type="button" data-testid="retry-button" onClick={handleSubmit} className="underline text-[11px] font-bold ml-2">Retry</button>
+                </div>
+              )}
+
+              {/* Bottom Action Bar: Language Selector & Submit Button */}
+              <div className="flex items-center justify-between gap-2.5 pt-1">
+                {/* Language Dropdown */}
+                <div className="flex items-center gap-1.5 bg-[#070b12] border border-gray-800 rounded-xl px-2.5 py-1.5 text-xs text-gray-300">
+                  <Globe className="w-3.5 h-3.5 text-gray-400" />
                   <select
                     data-testid="language-select"
                     value={selectedLanguage}
                     onChange={(e) => setSelectedLanguage(e.target.value)}
-                    className="bg-transparent text-xs text-gray-200 font-medium focus:outline-none cursor-pointer pr-1"
-                    title="Select simulation language"
+                    className="bg-transparent text-[11px] text-gray-200 focus:outline-none cursor-pointer pr-1"
                   >
                     {SUPPORTED_LANGUAGES.map((lang) => (
-                      <option key={lang.code} value={lang.code} className="bg-gray-900 text-gray-200">
+                      <option key={lang.code} value={lang.code} className="bg-gray-950 text-gray-200">
                         {lang.label}
                       </option>
                     ))}
                   </select>
                 </div>
 
-                {isListening && (
-                  <span
-                    data-testid="listening-indicator"
-                    className="flex items-center gap-1.5 text-xs text-red-400 font-medium animate-pulse"
-                  >
-                    <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                    Listening ({selectedLanguage === 'auto' ? 'Auto Detect' : currentLangConfig.label.split(' ')[0]})...
-                  </span>
-                )}
-                {isTranscribing && (
-                  <span
-                    data-testid="transcribing-indicator"
-                    className="flex items-center gap-1.5 text-xs text-blue-400 font-medium animate-pulse"
-                  >
-                    <Loader2 className="w-3 h-3 animate-spin text-blue-400" />
-                    Transcribing & detecting language...
-                  </span>
-                )}
-
-                <span
-                  data-testid="char-counter"
-                  className={`text-xs font-mono ${
-                    prompt.length > 2000
-                      ? 'text-red-400 font-bold'
-                      : prompt.length < 5 && prompt.length > 0
-                      ? 'text-amber-400'
-                      : 'text-gray-400'
+                {/* Generate Simulation Button matching Image */}
+                <button
+                  type="submit"
+                  data-testid="generate-button"
+                  disabled={!isFormValid || isLoading}
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-lg ${
+                    isFormValid && !isLoading
+                      ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30 cursor-pointer'
+                      : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-800'
                   }`}
                 >
-                  {prompt.length} / 2000 chars
-                </span>
-              </div>
-            </div>
-
-            <div className="flex gap-2.5 items-stretch">
-              <textarea
-                id="attack-prompt"
-                data-testid="prompt-input"
-                rows={4}
-                value={prompt}
-                onChange={(e) => {
-                  setPrompt(e.target.value);
-                  setErrorMessage(null);
-                }}
-                placeholder="e.g. Simulate a spear phishing email from the university IT department warning students their account will be deactivated unless they verify credentials within 24 hours..."
-                className="flex-1 min-h-[110px] bg-gray-950 border border-gray-800 rounded-xl p-3.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-y"
-              />
-
-              {/* Voice Input Button Next to the Input Box */}
-              <button
-                type="button"
-                data-testid="voice-input-btn"
-                disabled={isTranscribing}
-                onClick={toggleListening}
-                title={
-                  isTranscribing
-                    ? 'Detecting language & transcribing...'
-                    : isListening
-                    ? 'Stop listening'
-                    : selectedLanguage === 'auto'
-                    ? 'Speak in any language (Auto Detect)'
-                    : `Speak prompt in ${currentLangConfig.label} (Voice Input)`
-                }
-                className={`w-24 shrink-0 rounded-xl border flex flex-col items-center justify-center gap-2 p-3 transition-all cursor-pointer select-none group ${
-                  isTranscribing
-                    ? 'bg-blue-500/20 border-blue-500/80 text-blue-400 animate-pulse cursor-wait'
-                    : isListening
-                    ? 'bg-red-500/20 border-red-500/80 text-red-400 shadow-lg shadow-red-500/20 animate-pulse ring-2 ring-red-500/30'
-                    : 'bg-gray-950 hover:bg-gray-900 border-gray-800 hover:border-blue-500/60 text-gray-400 hover:text-blue-400'
-                }`}
-              >
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-                    isTranscribing
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : isListening
-                      ? 'bg-red-500 text-white shadow-md'
-                      : 'bg-gray-900 group-hover:bg-gray-800 text-blue-400 border border-gray-800'
-                  }`}
-                >
-                  {isTranscribing ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : isListening ? (
-                    <MicOff className="w-5 h-5" />
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                      <span>Generating scenario with AI...</span>
+                    </>
                   ) : (
-                    <Mic className="w-5 h-5" />
+                    <>
+                      <span>{simulationMode === 'detective' ? 'Start Detective Challenge' : 'Generate Simulation'}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </>
                   )}
-                </div>
-                <span className="text-[11px] font-semibold tracking-wide text-center leading-tight">
-                  {isTranscribing ? 'Processing...' : isListening ? 'Stop Mic' : 'Voice Input'}
-                </span>
-              </button>
-            </div>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
 
-            {voiceNotice && (
-              <p data-testid="voice-notice" className="text-xs text-amber-400 flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                <span>{voiceNotice}</span>
-              </p>
-            )}
-
-            {isPromptTooShort && (
-              <p className="text-xs text-amber-400 flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span>Prompt is too short. Please provide at least 5 characters describing the scenario.</span>
-              </p>
-            )}
-            {isPromptTooLong && (
-              <p className="text-xs text-red-400 flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span>Prompt exceeds the maximum limit of 2000 characters.</span>
-              </p>
-            )}
+        {/* Bottom Section: "Try These Example Scenarios" matching Image */}
+        <section className="space-y-2 pt-2 border-t border-gray-900/90 shrink-0">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs sm:text-sm font-bold text-white tracking-tight">
+              Try These Example Scenarios
+            </h3>
+            <span className="text-[10px] text-gray-500">
+              Click to load preset
+            </span>
           </div>
 
-          {/* Reference Image Upload (Optional) */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="block text-sm font-semibold text-gray-200">
-                Reference Images (Optional)
-              </label>
-              <span className="text-xs text-gray-400">
-                Max 3 images (PNG, JPEG, WebP, 5MB each)
-              </span>
-            </div>
-
-            {/* Vision Model / Smart OCR Banner */}
-            <div
-              data-testid="vision-notice"
-              className="p-3 rounded-lg bg-blue-950/30 border border-blue-800/50 flex items-start gap-2.5 text-xs text-blue-200/90 leading-relaxed"
-            >
-              <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-              <span>
-                Smart OCR Vision Active: Upload screenshots of suspicious emails, chat messages, or fake websites. The AI will extract the text, branding, and attack tactics to build an authentic replica simulation.
-              </span>
-            </div>
-
-            {/* Upload Box */}
-            <div
-              data-testid="image-dropzone"
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-gray-800 hover:border-gray-700 bg-gray-950/40 rounded-xl p-5 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors group"
-            >
-              <div className="w-10 h-10 rounded-full bg-gray-900 group-hover:bg-gray-800 flex items-center justify-center transition-colors">
-                <Upload className="w-5 h-5 text-gray-400 group-hover:text-blue-400" />
-              </div>
-              <div className="text-center">
-                <p className="text-xs font-medium text-gray-300">
-                  <span className="text-blue-400 hover:underline">Click to browse</span> or drag and drop reference images
-                </p>
-                <p className="text-[11px] text-gray-500 mt-0.5">
-                  Screenshots of phishing emails, chat snippets, or target login forms
-                </p>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                data-testid="image-input"
-                multiple
-                accept="image/png,image/jpeg,image/webp"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-            </div>
-
-            {fileError && (
-              <p className="text-xs text-red-400 flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span>{fileError}</span>
-              </p>
-            )}
-
-            {/* Thumbnail Previews */}
-            {images.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                {images.map((img, idx) => (
-                  <div
-                    key={idx}
-                    className="relative rounded-lg overflow-hidden border border-gray-800 bg-gray-900 flex items-center gap-2.5 p-2 group"
-                  >
-                    <img
-                      src={img.previewUrl}
-                      alt={img.name}
-                      className="w-12 h-12 object-cover rounded border border-gray-800 shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-gray-200 truncate">
-                        {img.name}
-                      </div>
-                      <div className="text-[10px] text-gray-500">{img.sizeKb} KB</div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveImage(idx)}
-                      className="p-1 rounded bg-gray-800 hover:bg-red-950 hover:text-red-400 text-gray-400 transition-colors"
-                      title="Remove image"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Error Banner */}
-          {errorMessage && (
-            <div
-              data-testid="error-banner"
-              className="p-4 rounded-xl bg-red-950/40 border border-red-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-red-200"
-            >
-              <div className="flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                <span className="leading-relaxed">{errorMessage}</span>
-              </div>
-              <button
-                type="button"
-                data-testid="retry-button"
-                onClick={handleSubmit}
-                className="px-3 py-1.5 rounded-lg bg-red-800/50 hover:bg-red-800 text-white font-medium transition-colors shrink-0"
-              >
-                Retry
-              </button>
-            </div>
-          )}
-
-          {/* Submit Action */}
-          <div className="pt-2">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {/* Card 1: University Phishing Email */}
             <button
-              type="submit"
-              data-testid="generate-button"
-              disabled={!isFormValid}
-              className={`w-full py-3.5 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg ${
-                isFormValid
-                  ? simulationMode === 'detective'
-                    ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/20 hover:shadow-amber-600/30 cursor-pointer ring-1 ring-amber-400/50'
-                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/20 hover:shadow-blue-500/30 cursor-pointer'
-                  : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-800'
-              }`}
+              type="button"
+              onClick={() => handleApplyPreset(PRESETS[0])}
+              className="text-left p-3 rounded-xl bg-[#0c121e] hover:bg-[#111928] border border-gray-800/80 hover:border-blue-500/50 transition-all flex flex-col justify-between gap-2.5 group cursor-pointer"
             >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>
-                    {simulationMode === 'detective'
-                      ? 'Constructing 3-Round Detective Challenge with AI...'
-                      : 'Generating scenario with AI...'}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="w-7 h-7 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                    <Mail className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[9.5px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#131b2c] text-blue-300 border border-blue-900/50 font-bold">
+                    EMAIL
                   </span>
-                </>
-              ) : simulationMode === 'detective' ? (
-                <>
-                  <Search className="w-4 h-4 text-amber-200" />
-                  <span>Start Cyber Detective Challenge (3 Rounds)</span>
-                  <ArrowRight className="w-4 h-4 text-amber-200" />
-                </>
-              ) : (
-                <>
-                  <span>Generate Simulation</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors">
+                    University Phishing Email
+                  </h4>
+                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1 leading-snug">
+                    A message claiming you won a prize and asking you to click a link.
+                  </p>
+                </div>
+              </div>
+              <div className="pt-1 text-blue-400 group-hover:translate-x-1 transition-transform">
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+            </button>
+
+            {/* Card 2: Helpdesk Chat Impersonation */}
+            <button
+              type="button"
+              onClick={() => handleApplyPreset(PRESETS[1])}
+              className="text-left p-3 rounded-xl bg-[#0c121e] hover:bg-[#111928] border border-gray-800/80 hover:border-emerald-500/50 transition-all flex flex-col justify-between gap-2.5 group cursor-pointer"
+            >
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <MessageSquare className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[9.5px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#131b2c] text-emerald-300 border border-emerald-900/50 font-bold">
+                    CHAT
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors">
+                    Helpdesk Chat Impersonation
+                  </h4>
+                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1 leading-snug">
+                    A fake support agent asking for your account details.
+                  </p>
+                </div>
+              </div>
+              <div className="pt-1 text-emerald-400 group-hover:translate-x-1 transition-transform">
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+            </button>
+
+            {/* Card 3: Bank Fraud Alert SMS */}
+            <button
+              type="button"
+              onClick={() => handleApplyPreset(PRESETS[2])}
+              className="text-left p-3 rounded-xl bg-[#0c121e] hover:bg-[#111928] border border-gray-800/80 hover:border-red-500/50 transition-all flex flex-col justify-between gap-2.5 group cursor-pointer"
+            >
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="w-7 h-7 rounded-lg bg-red-600/20 border border-red-500/30 flex items-center justify-center text-red-400">
+                    <Smartphone className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[9.5px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#131b2c] text-red-300 border border-red-900/50 font-bold">
+                    SMS
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white group-hover:text-red-400 transition-colors">
+                    Bank Fraud Alert SMS
+                  </h4>
+                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1 leading-snug">
+                    A suspicious SMS from a bank claiming an unauthorized transaction.
+                  </p>
+                </div>
+              </div>
+              <div className="pt-1 text-red-400 group-hover:translate-x-1 transition-transform">
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+            </button>
+
+            {/* Card 4: Single Sign-On Cloned Portal */}
+            <button
+              type="button"
+              onClick={() => handleApplyPreset(PRESETS[3])}
+              className="text-left p-3 rounded-xl bg-[#0c121e] hover:bg-[#111928] border border-gray-800/80 hover:border-purple-500/50 transition-all flex flex-col justify-between gap-2.5 group cursor-pointer"
+            >
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="w-7 h-7 rounded-lg bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                    <Globe className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[9.5px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#131b2c] text-purple-300 border border-purple-900/50 font-bold">
+                    WEBSITE
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white group-hover:text-purple-400 transition-colors">
+                    Single Sign-On Cloned Portal
+                  </h4>
+                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1 leading-snug">
+                    A cloned website that looks like a real login page.
+                  </p>
+                </div>
+              </div>
+              <div className="pt-1 text-purple-400 group-hover:translate-x-1 transition-transform">
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
             </button>
           </div>
-        </form>
+        </section>
       </main>
-
-      {/* Footer */}
-      <footer className="border-t border-gray-850 bg-gray-950 py-4 px-6 text-center text-xs text-gray-500">
-        AI-driven social engineering attack simulation and awareness platform • Educational cybersecurity research
-      </footer>
     </div>
   );
 }
+

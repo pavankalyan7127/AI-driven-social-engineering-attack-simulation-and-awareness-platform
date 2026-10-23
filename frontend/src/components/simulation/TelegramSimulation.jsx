@@ -31,6 +31,18 @@ import {
 } from 'lucide-react';
 
 /**
+ * Sanitizes contact/channel names to remove spoiler meta-tags like "(Impersonator)",
+ * "(Attacker)", "(Fake)", "(Scammer)", etc.
+ */
+export function cleanContactName(name) {
+  if (!name || typeof name !== 'string') return name || '';
+  return name
+    .replace(/\s*[\(\[\{](?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)[\)\]\}]/gi, '')
+    .replace(/\s*-\s*(?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)/gi, '')
+    .trim();
+}
+
+/**
  * TelegramSimulation Component
  * 
  * Authentic Telegram Web / Desktop attack simulation interface.
@@ -82,7 +94,8 @@ export default function TelegramSimulation({
   const initialConversations = useMemo(() => {
     if (Array.isArray(scenario.conversations) && scenario.conversations.length > 0) {
       return scenario.conversations.map((c, idx) => {
-        const name = c.contact?.name || c.contactName || c.sender?.name || scenario.contactName || 'Telegram Channel';
+        const rawName = c.contact?.name || c.contactName || c.sender?.name || scenario.contactName || 'Telegram Channel';
+        const name = cleanContactName(rawName);
         const isVerified = Boolean(
           c.contact?.isVerified !== undefined
             ? c.contact.isVerified
@@ -99,12 +112,12 @@ export default function TelegramSimulation({
           isTarget: c.isTarget !== undefined ? c.isTarget : (idx === 0),
           isVerified,
           contact: {
-            name,
             subtitle,
             avatar: c.contact?.avatar || (name ? name.charAt(0).toUpperCase() : 'T'),
             avatarBg: c.contact?.avatarBg || (isVerified ? 'bg-sky-600 text-white' : 'bg-purple-700 text-white'),
             status: c.contact?.status || (isVerified ? 'Official Verified Channel' : 'channel'),
             ...(c.contact || {}),
+            name,
             isVerified
           },
           messages: Array.isArray(c.messages) ? c.messages : []

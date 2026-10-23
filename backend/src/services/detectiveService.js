@@ -1,5 +1,6 @@
 import Groq from 'groq-sdk';
-import { detectLanguage } from './groqService.js';
+import { detectLanguage, repairAndParseScenarioJson } from './groqService.js';
+import { cleanContactName } from '../validators/scenarioValidator.js';
 
 /**
  * Sanitizes a REAL round communication to strictly enforce the Golden Rule of Cybersecurity:
@@ -127,7 +128,7 @@ export function normalizeRoundScenarioData(round) {
   if (Array.isArray(copy.scenarioData.conversations)) {
     const isRealRound = copy.type === 'REAL';
     copy.scenarioData.conversations = copy.scenarioData.conversations.map((conv) => {
-      const contactName = conv.contactName || conv.contact?.name || conv.sender?.name || 'Sender';
+      const contactName = cleanContactName(conv.contactName || conv.contact?.name || conv.sender?.name || 'Sender');
       const phoneNumber = conv.phoneNumber || conv.contact?.phone || conv.sender?.phoneNumber || '+1 (800) 555-0199';
       const isVerified = conv.isVerified !== undefined
         ? Boolean(conv.isVerified)
@@ -160,22 +161,24 @@ export function normalizeRoundScenarioData(round) {
   }
 
   // Voice call normalization
-  if (copy.scenarioData.callData || copy.scenarioData.callerInfo || copy.scenarioData.caller || copy.scenarioData.script) {
-    const cd = copy.scenarioData.callData || {};
-    const ci = copy.scenarioData.callerInfo || copy.scenarioData.caller || {};
-    const callerName = cd.callerName || ci.name || ci.callerName || (copy.type === 'REAL' ? 'Bank Fraud Department' : 'Fraud Prevention Imposter');
-    const callerNumber = cd.callerNumber || ci.number || ci.callerNumber || (copy.type === 'REAL' ? '+1 (800) 935-9935' : '+1 (800) 555-0199');
-    const speech = cd.callerSpeech || cd.openingLine || (Array.isArray(copy.scenarioData.script) && copy.scenarioData.script[0]?.message) || (copy.type === 'REAL' ? 'This is an automated advisory regarding unusual activity on your card.' : 'Hello, this is fraud prevention calling regarding an unauthorized transfer.');
+  const sd = copy.scenarioData || {};
+  const hasCallData = sd.callData || sd.callerInfo || sd.caller || sd.script || sd.callerName || sd.openingLine || sd.callerSpeech;
+  if (hasCallData) {
+    const cd = sd.callData || {};
+    const ci = sd.callerInfo || sd.caller || {};
+    const callerName = cleanContactName(cd.callerName || sd.callerName || ci.name || ci.callerName || (copy.type === 'REAL' ? 'Bank Fraud Department' : 'Fraud Prevention Imposter'));
+    const callerNumber = cd.callerNumber || sd.callerNumber || ci.number || ci.callerNumber || (copy.type === 'REAL' ? '+1 (800) 935-9935' : '+1 (800) 555-0199');
+    const speech = cd.callerSpeech || cd.openingLine || sd.callerSpeech || sd.openingLine || (Array.isArray(sd.script) && sd.script[0]?.message) || (copy.type === 'REAL' ? 'This is an automated advisory regarding unusual activity on your card.' : 'Hello, this is fraud prevention calling regarding an unauthorized transfer.');
 
     copy.scenarioData.callData = {
-      id: cd.id || `call-det-${copy.roundNumber || 1}`,
+      id: cd.id || sd.id || `call-det-${copy.roundNumber || 1}`,
       callerName,
       callerNumber,
-      location: cd.location || (copy.type === 'REAL' ? 'Verified Official Line' : 'Suspected Spoofed Line'),
+      location: cd.location || sd.location || (copy.type === 'REAL' ? 'Verified Official Line' : 'Suspected Spoofed Line'),
       openingLine: speech,
       callerSpeech: speech,
-      personaContext: cd.personaContext || `Representative regarding ${callerName}`,
-      targetInformation: cd.targetInformation || (copy.type === 'REAL' ? 'No confidential data requested' : '16-digit card number and CVV')
+      personaContext: cd.personaContext || sd.personaContext || `Representative regarding ${callerName}`,
+      targetInformation: cd.targetInformation || sd.targetInformation || (copy.type === 'REAL' ? 'No confidential data requested' : '16-digit card number and CVV')
     };
   }
 
@@ -234,6 +237,8 @@ CRITICAL TRAINING OBJECTIVES:
    - For every round, provide explicit, realistic clues embedded in the communication that a careful detective can spot (e.g. sender email/number, absence or presence of links, tone, authentication indicators).
 6. LANGUAGE:
    - Generate all user-facing content (subject, body, sender, clues, explanations) in ${language}. If ${language} is an Indian language (e.g. Tamil, Telugu, Hindi), output authentic native script.
+7. REALISM RULE FOR CONTACT NAMES:
+   - NEVER append giveaway spoiler tags like "(Impersonator)", "(Attacker)", "(Scammer)", "(Fake)", "(Phishing)" to contactName, sender.name, or callerName! Real apps and calls display authentic names (e.g. "Surya", "David Miller", "+91 98401 22334"), NEVER a spoiler label.
 
 TARGET CHANNEL: "${channel}" (Must be one of: email, sms, chat, website, call, whatsapp, instagram, telegram).
 
@@ -270,7 +275,7 @@ CHANNEL-SPECIFIC SCENARIO DATA REQUIREMENTS:
         "id": "conv-round-1",
         "contactName": "VM-HDFCBK or Phone Number",
         "phoneNumber": "VM-HDFCBK or Phone Number",
-        "isVerified": true, // true if REAL, false if FAKE
+        "isVerified": true,
         "messages": [
           { "id": "m-1", "sender": "contact", "text": "Message text (NO URLs if REAL)", "timestamp": "10:00 AM" }
         ]
@@ -286,7 +291,7 @@ CHANNEL-SPECIFIC SCENARIO DATA REQUIREMENTS:
         "id": "wa-round-1",
         "contactName": "Official Bank Alerts",
         "phoneNumber": "+91 94421 88902",
-        "isVerified": true, // true if REAL, false if FAKE
+        "isVerified": true,
         "contact": {
           "name": "Official Bank Alerts",
           "phone": "+91 94421 88902",
@@ -308,7 +313,7 @@ CHANNEL-SPECIFIC SCENARIO DATA REQUIREMENTS:
         "id": "insta-round-1",
         "contactName": "Instagram User or Official Brand",
         "handle": "official_brand_or_user",
-        "isVerified": true, // true if REAL (blue badge), false if FAKE
+        "isVerified": true,
         "contact": {
           "name": "Instagram User or Official Brand",
           "handle": "official_brand_or_user",
@@ -330,7 +335,7 @@ CHANNEL-SPECIFIC SCENARIO DATA REQUIREMENTS:
         "id": "tele-round-1",
         "contactName": "Telegram Channel or Service Bot",
         "subtitle": "Official Channel",
-        "isVerified": true, // true if REAL (blue badge), false if FAKE
+        "isVerified": true,
         "contact": {
           "name": "Telegram Channel or Service Bot",
           "subtitle": "Official Channel",
@@ -349,7 +354,7 @@ CHANNEL-SPECIFIC SCENARIO DATA REQUIREMENTS:
       {
         "id": "chat-round-1",
         "contactName": "Contact Name",
-        "isVerified": true, // true if REAL, false if FAKE
+        "isVerified": true,
         "messages": [
           { "id": "c-1", "sender": "contact", "text": "Chat message text (NO URLs if REAL)", "timestamp": "10:00 AM" }
         ]
@@ -1705,13 +1710,16 @@ export async function generateDetectiveChallenge({
   let resolvedChannel = (channel || 'auto').toLowerCase();
   if (resolvedChannel === 'auto') {
     const lower = prompt.toLowerCase();
-    if (/\b(?:call|vishing|phone\s*call|voice|spoke|spoke\s*on|caller|calling|called|dialed|ring|dial|telephone)\b/.test(lower)) resolvedChannel = 'call';
-    else if (/\b(?:whatsapp|wa|whats\s*app)\b/.test(lower)) resolvedChannel = 'whatsapp';
+    // 1. Specific social messaging and platform-specific channels take precedence over generic keywords
+    if (/\b(?:whatsapp|wa|whats\s*app)\b/.test(lower)) resolvedChannel = 'whatsapp';
+    else if (/\b(?:instagram|insta|ig(?:\s*dm)?)\b/.test(lower)) resolvedChannel = 'instagram';
     else if (/\b(?:telegram|tg)\b/.test(lower)) resolvedChannel = 'telegram';
-    else if (/\b(?:instagram|insta|ig)\b/.test(lower)) resolvedChannel = 'instagram';
     else if (/\b(?:sms|text\s*message|smishing|phone\s*text)\b/.test(lower)) resolvedChannel = 'sms';
-    else if (/\b(?:chat|dm|slack|teams)\b/.test(lower)) resolvedChannel = 'chat';
-    else if (/\b(?:website|portal|login\s*page|webpage|url)\b/.test(lower)) resolvedChannel = 'website';
+    else if (/\b(?:website|portal|login\s*page|webpage|url|phishing\s*link|domain)\b/.test(lower)) resolvedChannel = 'website';
+    // 2. Telephone voice calls (must match voice/phone call contexts, NOT "account called X" or "named")
+    else if (/\b(?:phone\s*call|voice\s*call|vishing|telephone|incoming\s*call|got\s*a\s*call|received\s*a\s*call|call\s*from|calling\s*me|called\s*me|on\s*the\s*phone|caller)\b/.test(lower)) resolvedChannel = 'call';
+    // 3. Generic chat & workplace messaging
+    else if (/\b(?:chat|dm|direct\s*message|slack|teams|discord)\b/.test(lower)) resolvedChannel = 'chat';
     else resolvedChannel = 'email';
   }
 
@@ -1725,8 +1733,10 @@ export async function generateDetectiveChallenge({
     const systemPrompt = buildDetectiveSystemPrompt(resolvedChannel, detectedLang);
     const userPrompt = `Create a 3-round Cyber Detective Challenge based on this scenario brief:\n"${prompt || 'Simulate realistic workplace cyber threats and legitimate operational notices'}"\nChannel: ${resolvedChannel}\nLanguage: ${detectedLang}`;
 
-    const activeModel = (process.env.GROQ_MODEL?.trim()) || 'openai/gpt-oss-20b';
-    let completion;
+    const activeModel = (process.env.GROQ_MODEL?.trim()) || 'openai/gpt-oss-120b';
+    let completion = null;
+    let rawContent = null;
+
     try {
       completion = await groq.chat.completions.create({
         model: activeModel,
@@ -1735,26 +1745,57 @@ export async function generateDetectiveChallenge({
           { role: 'user', content: userPrompt }
         ],
         response_format: { type: 'json_object' },
-        temperature: 0.2
+        temperature: 0.2,
+        max_tokens: 4096
       });
+      rawContent = completion.choices?.[0]?.message?.content;
     } catch (primaryErr) {
       if (primaryErr.status === 400 && (primaryErr.error?.code === 'json_validate_failed' || primaryErr.message?.includes('failed_generation'))) {
-        console.warn('[Groq Detective Gen Warning]: Initial JSON validation failed. Retrying with temperature 0.05...');
-        completion = await groq.chat.completions.create({
-          model: activeModel,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          response_format: { type: 'json_object' },
-          temperature: 0.05
-        });
+        console.warn('[Groq Detective Gen Warning]: Initial JSON validation failed. Retrying with alternate model or prompt repair...');
+        
+        // Attempt 1: Try with alternate model
+        const altModel = activeModel === 'openai/gpt-oss-120b' ? 'openai/gpt-oss-20b' : 'openai/gpt-oss-120b';
+        try {
+          completion = await groq.chat.completions.create({
+            model: altModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.05,
+            max_tokens: 4096
+          });
+          rawContent = completion.choices?.[0]?.message?.content;
+        } catch (retryModelErr) {
+          // Attempt 2: If strict json_object failed, request raw JSON without response_format and repair/parse
+          try {
+            console.warn('[Groq Detective Gen Warning]: Retrying without strict json_object response_format...');
+            completion = await groq.chat.completions.create({
+              model: activeModel,
+              messages: [
+                { role: 'system', content: systemPrompt + '\nCRITICAL REQUIREMENT: Output strictly a single raw valid JSON object. Do NOT include markdown code blocks, preamble, or comments.' },
+                { role: 'user', content: userPrompt }
+              ],
+              temperature: 0.05,
+              max_tokens: 4096
+            });
+            rawContent = completion.choices?.[0]?.message?.content;
+          } catch (_) {
+            throw primaryErr;
+          }
+        }
       } else {
         throw primaryErr;
       }
     }
 
-    const parsed = JSON.parse(completion.choices?.[0]?.message?.content || '{}');
+    let parsed = null;
+    try {
+      parsed = JSON.parse(rawContent || '{}');
+    } catch (_) {
+      parsed = repairAndParseScenarioJson(rawContent);
+    }
     if (!parsed.rounds || !Array.isArray(parsed.rounds) || parsed.rounds.length < 3) {
       throw new Error('Groq generated incomplete rounds for detective challenge');
     }

@@ -300,6 +300,9 @@ ${(language && language !== 'English')
   ? `The user explicitly requested this simulation scenario in "${language}". You MUST generate ALL user-facing text (email subject, body text, preview, chat/SMS messages, website headings, paragraphs, form labels, placeholder text, and caller speech) in authentic, natural ${language} using native ${language} script.
 CRITICAL CONSTRAINT: All JSON property names and structural keys (e.g. "scenarioId", "channel", "title", "subject", "body", "text", "type", "id", "sender", "recipient", "options", "terminationRules", "attackClassification") MUST remain strictly in English ASCII so the simulator runtime operates seamlessly. Only translate the human-readable text values.`
   : `If the user prompt is written in or requests an Indian regional language (such as Tamil, Telugu, Hindi, Kannada, Malayalam, Bengali, etc.), you MUST generate all human-facing attack content (email subject/body, chat/SMS messages, website content, caller speech) in that EXACT language and script. All JSON keys MUST remain strictly in English.`}
+
+7. REALISM RULE FOR CONTACT AND SENDER NAMES:
+   NEVER append spoiler or meta labels like "(Impersonator)", "(Attacker)", "(Scammer)", "(Fake)", "(Phishing)" to contactName, sender.name, or callerName! Real chat apps and caller displays (WhatsApp, Instagram, Telegram, SMS, phone calls) display authentic real-world names (e.g. "Surya", "David Miller", "+91 98401 22334"), NEVER a giveaway spoiler tag.
 `;
 }
 

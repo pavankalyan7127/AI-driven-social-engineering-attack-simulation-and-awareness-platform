@@ -70,6 +70,18 @@ function MobileStatusBar({ time = '9:41' }) {
 }
 
 /**
+ * Sanitizes contact/sender names to remove spoiler meta-tags like "(Impersonator)",
+ * "(Attacker)", "(Fake)", "(Scammer)", etc.
+ */
+export function cleanContactName(name) {
+  if (!name || typeof name !== 'string') return name || '';
+  return name
+    .replace(/\s*[\(\[\{](?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)[\)\]\}]/gi, '')
+    .replace(/\s*-\s*(?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)/gi, '')
+    .trim();
+}
+
+/**
  * SmsSimulation Component
  * 
  * Reusable, high-fidelity native mobile SMS simulation module for
@@ -117,7 +129,8 @@ export default function SmsSimulation({
   const [conversations, setConversations] = useState(() => {
     if (Array.isArray(scenario.conversations) && scenario.conversations.length > 0) {
       return scenario.conversations.map(c => {
-        const contactName = c.sender?.name || c.contactName || c.name || scenario.senderName || 'Sender';
+        const rawName = c.sender?.name || c.contactName || c.name || scenario.senderName || 'Sender';
+        const contactName = cleanContactName(rawName);
         const phoneNumber = c.sender?.phoneNumber || c.phoneNumber || c.senderPhone || scenario.senderPhone || '+1 (800) 555-0199';
         return {
           ...c,

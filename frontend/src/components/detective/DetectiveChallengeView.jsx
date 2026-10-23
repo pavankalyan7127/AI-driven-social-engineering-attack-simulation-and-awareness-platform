@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Shield,
   ShieldAlert,
@@ -18,6 +18,18 @@ import {
   Loader2
 } from 'lucide-react';
 import SimulationRenderer from '../simulation/SimulationRenderer';
+
+/**
+ * Sanitizes contact/sender/caller names to remove spoiler meta-tags like "(Impersonator)",
+ * "(Attacker)", "(Fake)", "(Scammer)", etc. that real-world platforms never display.
+ */
+export function cleanContactName(name) {
+  if (!name || typeof name !== 'string') return name || '';
+  return name
+    .replace(/\s*[\(\[\{](?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)[\)\]\}]/gi, '')
+    .replace(/\s*-\s*(?:impersonator|impersonation|attacker|scammer|scam|fake|phishing|phisher|spoofed|malicious|fraudster|unverified|hacker|bot)/gi, '')
+    .trim();
+}
 
 /**
  * Cyber Detective Mode - 3-Round Interactive Triage Challenge Runner.
@@ -115,93 +127,7 @@ export default function DetectiveChallengeView({
     );
   }
 
-  // Prepare normalized scenario object for SimulationRenderer
-  const rawEmailData = currentRound.scenarioData?.emailData;
-  const normalizedEmailData = rawEmailData ? {
-    ...rawEmailData,
-    senderName: rawEmailData.sender?.name || rawEmailData.senderName || rawEmailData.fromName || 'Sender',
-    senderEmail: rawEmailData.sender?.email || rawEmailData.senderEmail || rawEmailData.fromEmail || 'sender@example.com',
-    sender: {
-      name: rawEmailData.sender?.name || rawEmailData.senderName || rawEmailData.fromName || 'Sender',
-      email: rawEmailData.sender?.email || rawEmailData.senderEmail || rawEmailData.fromEmail || 'sender@example.com',
-      avatarBg: rawEmailData.sender?.avatarBg || (currentRound.type === 'REAL' ? 'bg-emerald-700 text-white' : 'bg-red-700 text-white'),
-      avatar: rawEmailData.sender?.avatar || (rawEmailData.sender?.name || rawEmailData.senderName || 'S').charAt(0).toUpperCase()
-    }
-  } : undefined;
-
-  const isRealRound = currentRound.type === 'REAL';
-  const rawConversations = currentRound.scenarioData?.conversations;
-  const normalizedConversations = Array.isArray(rawConversations) ? rawConversations.map((c) => {
-    const contactName = c.contact?.name || c.contactName || c.sender?.name || 'Contact';
-    const phoneNumber = c.contact?.phone || c.phoneNumber || c.sender?.phoneNumber || '+91 94421 88902';
-    const isVerified = c.isVerified !== undefined
-      ? Boolean(c.isVerified)
-      : (c.contact?.isVerified !== undefined ? Boolean(c.contact.isVerified) : isRealRound);
-    return {
-      ...c,
-      contactName,
-      phoneNumber,
-      isVerified,
-      contact: {
-        name: contactName,
-        phone: phoneNumber,
-        avatar: c.contact?.avatar || (contactName || 'C').charAt(0).toUpperCase(),
-        avatarBg: c.contact?.avatarBg || (isVerified ? 'bg-emerald-700 text-white' : 'bg-red-700 text-white'),
-        status: c.contact?.status || (isVerified ? 'Official business account' : 'online'),
-        about: c.contact?.about || (isVerified ? 'Official Verified Business Account' : 'Hey there! I am using WhatsApp.'),
-        ...(c.contact || {}),
-        isVerified
-      },
-      sender: {
-        name: contactName,
-        phoneNumber,
-        avatar: c.sender?.avatar || (contactName || 'S').charAt(0).toUpperCase(),
-        ...(c.sender || {}),
-        isVerified,
-        verificationStatus: isVerified ? 'Verified Official' : 'Unverified Sender'
-      }
-    };
-  }) : undefined;
-
-  const rawCallData = currentRound.scenarioData?.callData || currentRound.scenarioData?.callerInfo;
-  const initialCallerSpeech = rawCallData?.callerSpeech || rawCallData?.openingLine || 'Hello, I am calling regarding suspicious activity on your account.';
-  const normalizedCallData = rawCallData ? {
-    id: rawCallData.id || `call-det-${currentRound.roundNumber}`,
-    callerName: rawCallData.callerName || rawCallData.name || 'Bank Fraud Prevention',
-    callerNumber: rawCallData.callerNumber || rawCallData.number || '+1 (800) 555-0199',
-    location: rawCallData.location || (currentRound.type === 'REAL' ? 'Verified Official Line' : 'Suspected Spoofed Line'),
-    openingLine: initialCallerSpeech,
-    callerSpeech: initialCallerSpeech,
-    personaContext: rawCallData.personaContext || (currentRound.type === 'REAL' ? 'Official automated fraud notification' : 'Fraud prevention imposter'),
-    targetInformation: rawCallData.targetInformation || (currentRound.type === 'REAL' ? 'No confidential data requested' : '16-digit card number and CVV')
-  } : undefined;
-
-  const rawPages = currentRound.scenarioData?.pages;
-  const normalizedPages = rawPages && typeof rawPages === 'object' ? Object.fromEntries(
-    Object.entries(rawPages).map(([pageId, page]) => {
-      let pageUrl = page.url || `https://intranet.company.com/${pageId}`;
-      if (isRealRound) {
-        pageUrl = pageUrl.replace(/^http:\/\//i, 'https://');
-        if (!/^https?:\/\//i.test(pageUrl)) {
-          pageUrl = `https://${pageUrl}`;
-        }
-      }
-      return [
-        pageId,
-        {
-          ...page,
-          url: pageUrl,
-          isTargetPhish: isRealRound ? false : (page.isTargetPhish ?? true)
-        }
-      ];
-    })
-  ) : undefined;
-
-  const normalizedBrowserConfig = {
-    ...(currentRound.scenarioData?.browserConfig || {}),
-    securityStatus: isRealRound ? 'secure' : (currentRound.scenarioData?.browserConfig?.securityStatus || 'unsecured')
-  };
-
+  // Determine resolved channel and platform first
   const isWhatsApp =
     challenge.channel === 'whatsapp' ||
     currentRound.scenarioData?.channel === 'whatsapp' ||
@@ -238,7 +164,122 @@ export default function DetectiveChallengeView({
     channelToUse === 'instagram' ||
     channelToUse === 'telegram';
 
-  const scenarioForSimulation = {
+  // Prepare normalized scenario object for SimulationRenderer
+  const rawEmailData = currentRound.scenarioData?.emailData;
+  const normalizedEmailData = rawEmailData ? {
+    ...rawEmailData,
+    senderName: cleanContactName(rawEmailData.sender?.name || rawEmailData.senderName || rawEmailData.fromName || 'Sender'),
+    senderEmail: rawEmailData.sender?.email || rawEmailData.senderEmail || rawEmailData.fromEmail || 'sender@example.com',
+    sender: {
+      name: cleanContactName(rawEmailData.sender?.name || rawEmailData.senderName || rawEmailData.fromName || 'Sender'),
+      email: rawEmailData.sender?.email || rawEmailData.senderEmail || rawEmailData.fromEmail || 'sender@example.com',
+      avatarBg: rawEmailData.sender?.avatarBg || (currentRound.type === 'REAL' ? 'bg-emerald-700 text-white' : 'bg-red-700 text-white'),
+      avatar: rawEmailData.sender?.avatar || (rawEmailData.sender?.name || rawEmailData.senderName || 'S').charAt(0).toUpperCase()
+    }
+  } : undefined;
+
+  const isRealRound = currentRound.type === 'REAL';
+  let rawConversations = currentRound.scenarioData?.conversations;
+  if (!rawConversations && currentRound.scenarioData?.conversation) {
+    rawConversations = [currentRound.scenarioData.conversation];
+  }
+  if (!rawConversations && Array.isArray(currentRound.scenarioData?.messages) && currentRound.scenarioData.messages.length > 0) {
+    rawConversations = [{
+      id: 'conv-target-fallback',
+      isTarget: true,
+      contactName: currentRound.scenarioData.contactName || currentRound.scenarioData.senderName || currentRound.scenarioData.callerName || 'Contact',
+      messages: currentRound.scenarioData.messages
+    }];
+  }
+  if (!rawConversations && isChatLike) {
+    const singleMsg = currentRound.scenarioData?.callerSpeech || currentRound.scenarioData?.openingLine || currentRound.scenarioData?.body || currentRound.scenarioData?.text;
+    if (singleMsg) {
+      rawConversations = [{
+        id: 'conv-target-fallback',
+        isTarget: true,
+        contactName: currentRound.scenarioData?.contactName || currentRound.scenarioData?.callerName || (channelToUse === 'instagram' ? 'Meta Support' : 'Contact'),
+        messages: [{
+          id: 'm-fallback-1',
+          sender: 'contact',
+          text: singleMsg,
+          timestamp: '10:00 AM'
+        }]
+      }];
+    }
+  }
+
+  const normalizedConversations = Array.isArray(rawConversations) ? rawConversations.map((c) => {
+    const contactName = cleanContactName(c.contact?.name || c.contactName || c.sender?.name || 'Contact');
+    const phoneNumber = c.contact?.phone || c.phoneNumber || c.sender?.phoneNumber || '+91 94421 88902';
+    const isVerified = c.isVerified !== undefined
+      ? Boolean(c.isVerified)
+      : (c.contact?.isVerified !== undefined ? Boolean(c.contact.isVerified) : isRealRound);
+    return {
+      ...c,
+      contactName,
+      phoneNumber,
+      isVerified,
+      contact: {
+        name: contactName,
+        phone: phoneNumber,
+        avatar: c.contact?.avatar || (contactName || 'C').charAt(0).toUpperCase(),
+        avatarBg: c.contact?.avatarBg || (isVerified ? 'bg-emerald-700 text-white' : 'bg-red-700 text-white'),
+        status: c.contact?.status || (isVerified ? 'Official business account' : 'online'),
+        about: c.contact?.about || (isVerified ? 'Official Verified Business Account' : 'Hey there! I am using WhatsApp.'),
+        ...(c.contact || {}),
+        isVerified
+      },
+      sender: {
+        name: contactName,
+        phoneNumber,
+        avatar: c.sender?.avatar || (contactName || 'S').charAt(0).toUpperCase(),
+        ...(c.sender || {}),
+        isVerified,
+        verificationStatus: isVerified ? 'Verified Official' : 'Unverified Sender'
+      }
+    };
+  }) : undefined;
+
+  const rawCallData = currentRound.scenarioData?.callData || currentRound.scenarioData?.callerInfo || (channelToUse === 'call' || currentRound.scenarioData?.callerName ? currentRound.scenarioData : undefined);
+  const initialCallerSpeech = rawCallData?.callerSpeech || rawCallData?.openingLine || 'Hello, I am calling regarding suspicious activity on your account.';
+  const normalizedCallData = rawCallData ? {
+    id: rawCallData.id || `call-det-${currentRound.roundNumber}`,
+    callerName: cleanContactName(rawCallData.callerName || rawCallData.name || 'Bank Fraud Prevention'),
+    callerNumber: rawCallData.callerNumber || rawCallData.number || '+1 (800) 555-0199',
+    location: rawCallData.location || (currentRound.type === 'REAL' ? 'Verified Official Line' : 'Suspected Spoofed Line'),
+    openingLine: initialCallerSpeech,
+    callerSpeech: initialCallerSpeech,
+    personaContext: rawCallData.personaContext || (currentRound.type === 'REAL' ? 'Official automated fraud notification' : 'Fraud prevention imposter'),
+    targetInformation: rawCallData.targetInformation || (currentRound.type === 'REAL' ? 'No confidential data requested' : '16-digit card number and CVV')
+  } : undefined;
+
+  const rawPages = currentRound.scenarioData?.pages;
+  const normalizedPages = rawPages && typeof rawPages === 'object' ? Object.fromEntries(
+    Object.entries(rawPages).map(([pageId, page]) => {
+      let pageUrl = page.url || `https://intranet.company.com/${pageId}`;
+      if (isRealRound) {
+        pageUrl = pageUrl.replace(/^http:\/\//i, 'https://');
+        if (!/^https?:\/\//i.test(pageUrl)) {
+          pageUrl = `https://${pageUrl}`;
+        }
+      }
+      return [
+        pageId,
+        {
+          ...page,
+          url: pageUrl,
+          isTargetPhish: isRealRound ? false : (page.isTargetPhish ?? true)
+        }
+      ];
+    })
+  ) : undefined;
+
+  const normalizedBrowserConfig = {
+    ...(currentRound.scenarioData?.browserConfig || {}),
+    securityStatus: isRealRound ? 'secure' : (currentRound.scenarioData?.browserConfig?.securityStatus || 'unsecured')
+  };
+
+  const scenarioForSimulation = useMemo(() => ({
     scenarioId: `det-sim-r${currentRound.roundNumber}-${currentRound.type}`,
     channel: channelToUse,
     platform: platformToUse,
@@ -260,7 +301,21 @@ export default function DetectiveChallengeView({
     ...(normalizedConversations ? { conversations: normalizedConversations } : {}),
     ...(normalizedCallData ? { callData: normalizedCallData } : {}),
     ...(normalizedPages ? { pages: normalizedPages, browserConfig: normalizedBrowserConfig } : {})
-  };
+  }), [
+    currentRound.roundNumber,
+    currentRound.type,
+    currentRound.title,
+    currentRound.scenarioData,
+    channelToUse,
+    platformToUse,
+    isRealRound,
+    isChatLike,
+    normalizedEmailData,
+    normalizedConversations,
+    normalizedCallData,
+    normalizedPages,
+    normalizedBrowserConfig
+  ]);
 
   return (
     <div
@@ -333,8 +388,9 @@ export default function DetectiveChallengeView({
       <div className="flex-1 overflow-hidden relative flex items-center justify-center bg-gray-900">
         <div
           key={`round-container-${currentRound.roundNumber}-${currentRoundIndex}`}
+          data-testid="detective-round-container"
           className={`h-full transition-all duration-300 ${
-            challenge?.channel === 'sms' || challenge?.channel === 'call'
+            channelToUse === 'sms' || channelToUse === 'call'
               ? 'w-full max-w-[420px] shadow-2xl border-x border-gray-800 my-auto rounded-xl overflow-hidden'
               : 'w-full'
           }`}
@@ -342,7 +398,7 @@ export default function DetectiveChallengeView({
           <SimulationRenderer
             key={`sim-renderer-r${currentRound.roundNumber}-${currentRoundIndex}`}
             scenario={scenarioForSimulation}
-            sessionId={`sess-det-r${currentRound.roundNumber}-${Date.now()}`}
+            sessionId={`sess-det-${challenge?.challengeId || 'chall'}-r${currentRound.roundNumber}`}
             deviceMode="full"
             onAction={() => {}}
             onComplete={() => {}}

@@ -324,9 +324,16 @@ export default function VoiceCallSimulation({
   }, [isDetectiveMode, startListeningAutomatically, stopListeningImmediately, ttsEnabled]);
 
   const hasSpokenInitialRef = useRef(false);
+  const lastScenarioIdRef = useRef(null);
 
   // Synchronize call state across detective rounds
   useEffect(() => {
+    const currentScenarioId = scenario?.scenarioId || scenario?.id || (scenario?.roundNumber ? `round-${scenario.roundNumber}` : null);
+    if (lastScenarioIdRef.current && currentScenarioId && lastScenarioIdRef.current === currentScenarioId) {
+      return;
+    }
+    lastScenarioIdRef.current = currentScenarioId;
+
     hasSpokenInitialRef.current = false;
     setCallState(scenario.initialView || 'incoming');
     setCallDuration(0);
@@ -482,6 +489,7 @@ export default function VoiceCallSimulation({
 
   // 1. Answer Incoming Call
   const handleAnswerCall = () => {
+    hasSpokenInitialRef.current = true;
     setCallState('connected');
     emitEvent('call_answered', { callerName: callData.callerName, callerNumber: callData.callerNumber });
 
