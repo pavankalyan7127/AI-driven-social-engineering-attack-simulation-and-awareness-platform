@@ -146,6 +146,13 @@ export default function DetectiveChallengeView({
   let channelToUse = challenge.channel || 'email';
   let platformToUse = currentRound.scenarioData?.platform || challenge.platform;
 
+  const isCall =
+    challenge.channel === 'call' ||
+    currentRound.scenarioData?.channel === 'call' ||
+    Boolean(currentRound.scenarioData?.callData) ||
+    Boolean(currentRound.scenarioData?.callerSpeech) ||
+    Boolean(currentRound.scenarioData?.openingLine);
+
   if (isWhatsApp) {
     channelToUse = 'whatsapp';
     platformToUse = 'whatsapp_web';
@@ -155,6 +162,8 @@ export default function DetectiveChallengeView({
   } else if (isTelegram) {
     channelToUse = 'telegram';
     platformToUse = 'telegram_web';
+  } else if (isCall) {
+    channelToUse = 'call';
   }
 
   const isChatLike =
@@ -297,9 +306,9 @@ export default function DetectiveChallengeView({
       ? 'chat'
       : (channelToUse === 'call' ? 'incoming' : 'email'),
     ...currentRound.scenarioData,
-    ...(normalizedEmailData ? { emailData: normalizedEmailData } : {}),
+    ...(channelToUse === 'call' ? { callData: normalizedCallData } : (normalizedEmailData ? { emailData: normalizedEmailData } : {})),
     ...(normalizedConversations ? { conversations: normalizedConversations } : {}),
-    ...(normalizedCallData ? { callData: normalizedCallData } : {}),
+    ...(normalizedCallData && channelToUse !== 'call' ? { callData: normalizedCallData } : {}),
     ...(normalizedPages ? { pages: normalizedPages, browserConfig: normalizedBrowserConfig } : {})
   }), [
     currentRound.roundNumber,

@@ -163,6 +163,21 @@ describe('Cyber Detective Mode - Backend Service & API Tests', () => {
       expect(challenge.rounds).toHaveLength(3);
       expect(challenge.rounds[0].scenarioData.emailData.body).toMatch(/[\u0B80-\u0BFF]/);
     });
+
+    it('automatically resolves and generates CALL fallback challenge for Tamil call prompts with channel "auto"', () => {
+      const challenge = generateFallbackDetectiveChallenge({
+        prompt: 'எனக்கு வங்கியிலிருந்து ஒரு கால் வந்தது. என்னுடைய வங்கிக் கணக்கில் ஏதோ பிரச்சனை இருப்பதாகவும், அதைச் சரிசெய்ய உடனடியாக சில விவரங்களைக் கொடுக்க வேண்டும் என்றும் சொன்னார்கள்.',
+        channel: 'auto',
+        language: 'auto'
+      });
+
+      expect(challenge.channel).toBe('call');
+      expect(challenge.rounds).toHaveLength(3);
+      expect(challenge.rounds[0].scenarioData.callData).toBeDefined();
+      expect(challenge.rounds[0].scenarioData.callData.openingLine).toMatch(/[\u0B80-\u0BFF]/);
+      expect(challenge.rounds[0].scenarioData.callData.callerSpeech).toMatch(/[\u0B80-\u0BFF]/);
+      expect(challenge.channelCheatSheet.channel).toBe('call');
+    });
   });
 
   describe('scoreDetectiveChallenge', () => {
@@ -272,6 +287,24 @@ describe('Cyber Detective Mode - Backend Service & API Tests', () => {
       expect(res.body.challenge.rounds).toHaveLength(3);
       expect(res.body.challenge.channelCheatSheet).toBeDefined();
     }, 15000);
+
+    it('POST /api/detective/generate automatically predicts CALL channel for Tamil call prompt', async () => {
+      const res = await request(app)
+        .post('/api/detective/generate')
+        .send({
+          prompt: 'எனக்கு வங்கியிலிருந்து ஒரு கால் வந்தது. என்னுடைய வங்கிக் கணக்கில் ஏதோ பிரச்சனை இருப்பதாகவும், அதைச் சரிசெய்ய உடனடியாக சில விவரங்களைக் கொடுக்க வேண்டும் என்றும் சொன்னார்கள்.',
+          channel: 'auto',
+          language: 'auto'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.challenge).toBeDefined();
+      expect(res.body.challenge.channel).toBe('call');
+      expect(res.body.challenge.rounds).toHaveLength(3);
+      expect(res.body.challenge.rounds[0].scenarioData.callData).toBeDefined();
+      expect(res.body.challenge.channelCheatSheet.channel).toBe('call');
+    }, 30000);
 
     it('POST /api/detective/score validates missing rounds and returns 400', async () => {
       const res = await request(app)

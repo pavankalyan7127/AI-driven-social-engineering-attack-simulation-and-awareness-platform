@@ -63,6 +63,22 @@ export function sanitizeRealCommunication(round, channel = 'email') {
     });
   }
 
+  // Sanitize callData
+  if (cleaned.scenarioData?.callData) {
+    if (typeof cleaned.scenarioData.callData.openingLine === 'string') {
+      cleaned.scenarioData.callData.openingLine = cleaned.scenarioData.callData.openingLine.replace(
+        urlRegex,
+        'our official bank portal'
+      );
+    }
+    if (typeof cleaned.scenarioData.callData.callerSpeech === 'string') {
+      cleaned.scenarioData.callData.callerSpeech = cleaned.scenarioData.callData.callerSpeech.replace(
+        urlRegex,
+        'our official bank portal'
+      );
+    }
+  }
+
   // Sanitize forensic clues for REAL rounds to highlight NO links
   if (cleaned.clues) {
     if (typeof cleaned.clues.primaryIndicator === 'string') {
@@ -170,6 +186,8 @@ export function normalizeRoundScenarioData(round) {
     const callerNumber = cd.callerNumber || sd.callerNumber || ci.number || ci.callerNumber || (copy.type === 'REAL' ? '+1 (800) 935-9935' : '+1 (800) 555-0199');
     const speech = cd.callerSpeech || cd.openingLine || sd.callerSpeech || sd.openingLine || (Array.isArray(sd.script) && sd.script[0]?.message) || (copy.type === 'REAL' ? 'This is an automated advisory regarding unusual activity on your card.' : 'Hello, this is fraud prevention calling regarding an unauthorized transfer.');
 
+    copy.scenarioData.channel = 'call';
+    delete copy.scenarioData.emailData;
     copy.scenarioData.callData = {
       id: cd.id || sd.id || `call-det-${copy.roundNumber || 1}`,
       callerName,
@@ -451,10 +469,31 @@ Return strictly valid JSON matching this schema:
 }
 
 /**
+ * Detects if a prompt is requesting or describing a voice phone call (vishing) attack
+ * across multiple regional Indian languages (Tamil, Telugu, Hindi, Kannada, Malayalam) and English.
+ */
+export function detectCallFromPrompt(prompt = '') {
+  if (!prompt || typeof prompt !== 'string') return false;
+  const isTamilCall = /[\u0B80-\u0BFF]/.test(prompt) && /(?:கால்|அழைப்பு|தொலைபேசி|போன்|குரல்|பேசினா|அழைத்தா|அழைப்ப)/.test(prompt);
+  const isTeluguCall = /[\u0C00-\u0C7F]/.test(prompt) && /(?:కాల్|ఫోన్|ఫోను|వాయిస్|సంభాషణ|మాట్లాడారు|మాట్లాడుతున్నారు|టెలిఫోన్)/.test(prompt);
+  const isHindiCall = /[\u0900-\u097F]/.test(prompt) && /(?:कॉल|फोन|आवाज|वॉइस|टेलीफोन|बात की|बात कर)/.test(prompt);
+  const isKannadaCall = /[\u0C80-\u0CFF]/.test(prompt) && /(?:ಕಾಲ್|ಫೋನ್|ದೂರವಾಣಿ|ಕರೆ|ಮಾತನಾಡಿದರು)/.test(prompt);
+  const isMalayalamCall = /[\u0D00-\u0D7F]/.test(prompt) && /(?:കോൾ|ഫോൺ|വിളിച്ചു|ടെലിഫോൺ|ശബ്ദം)/.test(prompt);
+  const isEnglishCall = /\b(?:phone\s*call|voice\s*call|vishing|telephone|incoming\s*call|got\s*a\s*call|received\s*a\s*call|call\s*from|calling\s*me|called\s*me|on\s*the\s*phone|caller|bank\s*call|fraud\s*call|scam\s*call|fake\s*call|suspicious\s*call|voice\s*phishing|automated\s*call|robocall|phone\s*scam|call\s*regarding|call\s*about|call\s*simulation|dialed|dialing|spoken|spoke\s*to|ring(?:ing)?|answering\s*a\s*call|someone\s*called|calling\s*to|called\s*to|call\s*demanding|call\s*asking|call\s*came|call\s*received|received\s*call|phone|calls?|calling|called)\b/i.test(prompt);
+
+  return Boolean(isTamilCall || isTeluguCall || isHindiCall || isKannadaCall || isMalayalamCall || isEnglishCall);
+}
+
+/**
  * Generates a realistic fallback 3-round challenge when Groq is unavailable.
  */
 export function generateFallbackDetectiveChallenge({ prompt = '', channel = 'email', language = 'English' }) {
-  const normChannel = (channel || 'email').toLowerCase();
+  let normChannel = (channel || 'email').toLowerCase();
+  if (normChannel === 'auto' || normChannel === 'email') {
+    if (detectCallFromPrompt(prompt)) {
+      normChannel = 'call';
+    }
+  }
   const isTamil = language === 'Tamil' || /[\u0B80-\u0BFF]/.test(prompt);
   const isTelugu = language === 'Telugu' || /[\u0C00-\u0C7F]/.test(prompt);
 
@@ -1182,7 +1221,11 @@ export function generateFallbackDetectiveChallenge({ prompt = '', channel = 'ema
                 : isTelugu
                 ? 'నమస్కారం, మీ ఖాతా నుండి ప్రస్తుతం రూ. 95,000 బదిలీ అవుతోంది. దీన్ని వెంటనే నిలిపివేయడానికి మీ 16 అంకెల కార్డు నంబర్ మరియు CVV చెప్పండి.'
                 : "Hello, this is officer David from your bank's fraud prevention department. Someone is attempting to transfer $1,200 from your account right now. To stop this transaction immediately, I need you to confirm your 16-digit card number and the 3-digit CVV on the back.",
-              callerSpeech: "Hello, this is officer David from your bank's fraud prevention department. Someone is attempting to transfer $1,200 from your account right now. To stop this transaction immediately, I need you to confirm your 16-digit card number and the 3-digit CVV on the back.",
+              callerSpeech: isTamil
+                ? 'வணக்கம், உங்கள் கணக்கிலிருந்து இப்போது ரூ. 95,000 பரிமாற்றம் செய்யப்படுகிறது. இதை உடனடியாக ரத்து செய்ய உங்கள் 16 இலக்க அட்டை எண் மற்றும் சிவிவி (CVV) கூறவும்.'
+                : isTelugu
+                ? 'నమస్కారం, మీ ఖాతా నుండి ప్రస్తుతం రూ. 95,000 బదిలీ అవుతోంది. దీన్ని వెంటనే నిలిపివేయడానికి మీ 16 అంకెల కార్డు నంబర్ మరియు CVV చెప్పండి.'
+                : "Hello, this is officer David from your bank's fraud prevention department. Someone is attempting to transfer $1,200 from your account right now. To stop this transaction immediately, I need you to confirm your 16-digit card number and the 3-digit CVV on the back.",
               personaContext: 'Fraud imposter creating urgency to harvest card number and CVV over phone.',
               targetInformation: '16-digit card number and CVV'
             }
@@ -1216,7 +1259,11 @@ export function generateFallbackDetectiveChallenge({ prompt = '', channel = 'ema
                 : isTelugu
                 ? 'ఇది మీ బ్యాంక్ ఆటోమేటెడ్ భద్రతా నోటీసు. కార్డు 4821 పై అనుమానాస్పద లావాదేవీ నిలిపివేయబడింది. దయచేసి మీ అధికారిక మొబైల్ యాప్‌లో తనిఖీ చేయండి. మేము పాస్‌వర్డ్ అడగము.'
                 : 'This is an automated security advisory from your bank regarding card ending in 4821. An unusual charge of $1,200 was declined. If this was authorized by you, press 1. If not, press 2. For your security, we will never ask for your card number, PIN, or CVV over this call. Please review your account in the official mobile app.',
-              callerSpeech: 'This is an automated security advisory from your bank regarding card ending in 4821. An unusual charge of $1,200 was declined. If this was authorized by you, press 1. If not, press 2. For your security, we will never ask for your card number, PIN, or CVV over this call. Please review your account in the official mobile app.',
+              callerSpeech: isTamil
+                ? 'இது உங்கள் வங்கியின் தானியங்கி எச்சரிக்கை. அட்டை எண் 4821 இல் சந்தேகத்திற்குரிய கட்டணம் தடுக்கப்பட்டுள்ளது. உங்கள் அதிகாரப்பூர்வ மொபைல் செயலியில் சரிபார்க்கவும். நாங்கள் கடவுச்சொல் கேட்க மாட்டோம்.'
+                : isTelugu
+                ? 'ఇది మీ బ్యాంక్ ఆటోమేటెడ్ భద్రతా నోటీసు. కార్డు 4821 పై అనుమానాస్పద లావాదేవీ నిలిపివేయబడింది. దయచేసి మీ అధికారిక మొబైల్ యాప్‌లో తనిఖీ చేయండి. మేము పాస్‌వర్డ్ అడగము.'
+                : 'This is an automated security advisory from your bank regarding card ending in 4821. An unusual charge of $1,200 was declined. If this was authorized by you, press 1. If not, press 2. For your security, we will never ask for your card number, PIN, or CVV over this call. Please review your account in the official mobile app.',
               personaContext: 'Authentic automated bank notification with zero credential requests.',
               targetInformation: 'No confidential data requested'
             }
@@ -1250,7 +1297,11 @@ export function generateFallbackDetectiveChallenge({ prompt = '', channel = 'ema
                 : isTelugu
                 ? 'నమస్కారం, మీ కంప్యూటర్ నుండి వైరస్ వ్యాపిస్తున్నట్లు మైక్రோசாఫ్ట్ గుర్తించింది. వెంటనే రిమోట్ యాక్సెస్ ఇవ్వండి.'
                 : 'Hello, this is Microsoft Security Support. We have detected malicious intrusion attempts originating from your computer network. To prevent your system from being blacklisted, you must install our remote diagnostic utility immediately.',
-              callerSpeech: 'Hello, this is Microsoft Security Support. We have detected malicious intrusion attempts originating from your computer network. To prevent your system from being blacklisted, you must install our remote diagnostic utility immediately.',
+              callerSpeech: isTamil
+                ? 'வணக்கம், உங்கள் கணினியிலிருந்து வைரஸ் பரவுவதை மைக்ரோசாப்ட் கண்டறிந்துள்ளது. உடனே சரிசெய்ய உங்கள் கணினியை தொலைதூரத்தில் இயக்க அனுமதிக்கவும்.'
+                : isTelugu
+                ? 'నమస్కారం, మీ కంప్యూటర్ నుండి వైరస్ వ్యాపిస్తున్నట్లు మైక్రோసాఫ్ట్ గుర్తించింది. వెంటనే రిమోట్ యాక్సెస్ ఇవ్వండి.'
+                : 'Hello, this is Microsoft Security Support. We have detected malicious intrusion attempts originating from your computer network. To prevent your system from being blacklisted, you must install our remote diagnostic utility immediately.',
               personaContext: 'Tech support scammer demanding remote desktop control.',
               targetInformation: 'Remote desktop access and administrator credentials'
             }
@@ -1716,8 +1767,8 @@ export async function generateDetectiveChallenge({
     else if (/\b(?:telegram|tg)\b/.test(lower)) resolvedChannel = 'telegram';
     else if (/\b(?:sms|text\s*message|smishing|phone\s*text)\b/.test(lower)) resolvedChannel = 'sms';
     else if (/\b(?:website|portal|login\s*page|webpage|url|phishing\s*link|domain)\b/.test(lower)) resolvedChannel = 'website';
-    // 2. Telephone voice calls (must match voice/phone call contexts, NOT "account called X" or "named")
-    else if (/\b(?:phone\s*call|voice\s*call|vishing|telephone|incoming\s*call|got\s*a\s*call|received\s*a\s*call|call\s*from|calling\s*me|called\s*me|on\s*the\s*phone|caller)\b/.test(lower)) resolvedChannel = 'call';
+    // 2. Telephone voice calls (Multilingual: Tamil, Telugu, Hindi, Malayalam, Kannada, English)
+    else if (detectCallFromPrompt(prompt)) resolvedChannel = 'call';
     // 3. Generic chat & workplace messaging
     else if (/\b(?:chat|dm|direct\s*message|slack|teams|discord)\b/.test(lower)) resolvedChannel = 'chat';
     else resolvedChannel = 'email';
@@ -1827,12 +1878,29 @@ export async function generateDetectiveChallenge({
       language: parsed.language || detectedLang,
       topic: parsed.topic || prompt,
       rounds: rawRounds,
-      channelCheatSheet: parsed.channelCheatSheet || {
+      channelCheatSheet: parsed.channelCheatSheet || (resolvedChannel === 'call' ? {
+        channel: 'call',
+        whatToLookFor: [
+          'Credential Harvesting: Real bank fraud departments NEVER ask for your full 16-digit card number, CVV, OTP, or PIN on incoming phone calls.',
+          'Urgency and Manufactured Panic: Scammers create intense fear to disable critical thinking.',
+          'Caller ID Spoofing: Incoming phone numbers can easily be faked to appear as official bank numbers.'
+        ],
+        realMarkers: [
+          'Directs you to check the official mobile banking app or call back via numbers printed on your card',
+          'Only references masked account/card digits (e.g. ending in 4821)',
+          'Automated advisory that never requests verbal disclosure of credentials'
+        ],
+        fakeMarkers: [
+          'Demands verbal disclosure of 16-digit card number, CVV, or one-time passwords',
+          'High-pressure threats of immediate account suspension or legal action',
+          'Refuses to allow independent callback verification'
+        ]
+      } : {
         channel: resolvedChannel,
         whatToLookFor: ['Sender address/number', 'Request for credentials', 'Urgency and threats', 'Presence of links (Golden Rule: Real entities do not send login links)'],
         realMarkers: ['Official verified domains', 'NO clickable links or external URLs', 'No credential harvesting'],
         fakeMarkers: ['Lookalike domains', 'Direct demands for sensitive data', 'Urgent links or shortened URLs']
-      }
+      })
     };
   } catch (err) {
     console.warn('[Groq Detective Gen Warning, Falling back to local template]:', err.message);

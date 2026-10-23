@@ -477,86 +477,88 @@ export default function Home({
   };
 
   return (
-    <div className="h-screen max-h-screen overflow-hidden bg-[#070b12] text-gray-100 flex flex-col font-sans select-none">
+    <div className="min-h-screen bg-[#070b12] text-gray-100 flex flex-col font-sans select-none">
       {/* Top Navigation Bar Matching Image */}
       <Header activeTab={activeNav} onNavigate={handleNavClick} />
 
       {/* Main Content: Split 2-Column Hero + Form Layout */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 sm:px-10 py-2.5 sm:py-3.5 flex flex-col justify-between overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-6 sm:px-10 py-4 sm:py-6 flex flex-col justify-center gap-5 sm:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-stretch">
           
           {/* Left Column: Awareness Headline & Value Props */}
-          <div className="lg:col-span-6 space-y-3 pt-1">
-            {/* Pill Badge */}
-            <div className="inline-flex items-center gap-2 px-3 py-0.5 rounded-full bg-[#111927] border border-blue-900/40 text-blue-300 text-[10px] font-semibold tracking-wider uppercase">
-              <span>BE AWARE</span>
-              <span className="text-gray-500">•</span>
-              <span>RECOGNIZE SCAMS</span>
-              <span className="text-gray-500">•</span>
-              <span>STAY SAFE ONLINE</span>
+          <div className="lg:col-span-6 flex flex-col justify-between space-y-4">
+            <div className="space-y-3">
+              {/* Pill Badge */}
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#111927] border border-blue-900/40 text-blue-300 text-[10px] font-semibold tracking-wider uppercase w-fit">
+                <span>BE AWARE</span>
+                <span className="text-gray-500">•</span>
+                <span>RECOGNIZE SCAMS</span>
+                <span className="text-gray-500">•</span>
+                <span>STAY SAFE ONLINE</span>
+              </div>
+
+              {/* Main Headline */}
+              <h2 className="text-2xl sm:text-3xl xl:text-4xl font-black text-white tracking-tight leading-[1.15]">
+                Learn to stay safe from <br className="hidden sm:inline" />
+                <span className="text-blue-500">online scams</span>
+              </h2>
+
+              {/* Paragraph description */}
+              <p className="text-xs sm:text-[13px] text-gray-300 leading-relaxed max-w-lg">
+                Practice real-life situations like fake messages, calls and websites in a safe environment. Our AI creates simple and realistic simulations to help everyone — especially new and less experienced users — recognize scams and use phones and the internet more safely.
+              </p>
             </div>
 
-            {/* Main Headline */}
-            <h2 className="text-2xl sm:text-3xl xl:text-4xl font-black text-white tracking-tight leading-[1.15]">
-              Learn to stay safe from <br className="hidden sm:inline" />
-              <span className="text-blue-500">online scams</span>
-            </h2>
-
-            {/* Paragraph description */}
-            <p className="text-xs text-gray-300 leading-relaxed max-w-lg">
-              Practice real-life situations like fake messages, calls and websites in a safe environment. Our AI creates simple and realistic simulations to help everyone — especially new and less experienced users — recognize scams and use phones and the internet more safely.
-            </p>
-
-            {/* 4 Feature Columns below description matching Image */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1.5">
+            {/* 4 Feature Cards in balanced 2x2 grid matching right column height */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
               {/* Feature 1 */}
-              <div className="flex flex-col gap-1.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-md">
+              <div className="p-2.5 sm:p-3 rounded-xl bg-[#0c121e]/90 border border-gray-800/80 hover:border-gray-700 transition-colors flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-md">
                   <Shield className="w-4 h-4" />
                 </div>
-                <div>
-                  <h4 className="text-[11px] font-bold text-white leading-tight">Realistic Scenarios</h4>
-                  <p className="text-[9.5px] text-gray-400 mt-0.5 leading-snug">Based on common real-world scams</p>
+                <div className="min-w-0">
+                  <h4 className="text-[11.5px] font-bold text-white leading-tight truncate">Realistic Scenarios</h4>
+                  <p className="text-[10px] text-gray-400 mt-0.5 leading-snug line-clamp-1">Based on common real-world scams</p>
                 </div>
               </div>
 
               {/* Feature 2 */}
-              <div className="flex flex-col gap-1.5">
-                <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow-md">
+              <div className="p-2.5 sm:p-3 rounded-xl bg-[#0c121e]/90 border border-gray-800/80 hover:border-gray-700 transition-colors flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white shrink-0 shadow-md">
                   <MessageSquare className="w-4 h-4" />
                 </div>
-                <div>
-                  <h4 className="text-[11px] font-bold text-white leading-tight">Simple Language</h4>
-                  <p className="text-[9.5px] text-gray-400 mt-0.5 leading-snug">Easy to understand for everyone</p>
+                <div className="min-w-0">
+                  <h4 className="text-[11.5px] font-bold text-white leading-tight truncate">Simple Language</h4>
+                  <p className="text-[10px] text-gray-400 mt-0.5 leading-snug line-clamp-1">Easy to understand for everyone</p>
                 </div>
               </div>
 
               {/* Feature 3 */}
-              <div className="flex flex-col gap-1.5">
-                <div className="w-8 h-8 rounded-lg bg-amber-600 flex items-center justify-center text-white shadow-md">
+              <div className="p-2.5 sm:p-3 rounded-xl bg-[#0c121e]/90 border border-gray-800/80 hover:border-gray-700 transition-colors flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-600 flex items-center justify-center text-white shrink-0 shadow-md">
                   <Sparkles className="w-4 h-4" />
                 </div>
-                <div>
-                  <h4 className="text-[11px] font-bold text-white leading-tight">Learn by Practicing</h4>
-                  <p className="text-[9.5px] text-gray-400 mt-0.5 leading-snug">Build confidence through hands-on practice</p>
+                <div className="min-w-0">
+                  <h4 className="text-[11.5px] font-bold text-white leading-tight truncate">Learn by Practicing</h4>
+                  <p className="text-[10px] text-gray-400 mt-0.5 leading-snug line-clamp-1">Build confidence through hands-on practice</p>
                 </div>
               </div>
 
               {/* Feature 4 */}
-              <div className="flex flex-col gap-1.5">
-                <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center text-white shadow-md">
+              <div className="p-2.5 sm:p-3 rounded-xl bg-[#0c121e]/90 border border-gray-800/80 hover:border-gray-700 transition-colors flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center text-white shrink-0 shadow-md">
                   <TrendingUp className="w-4 h-4" />
                 </div>
-                <div>
-                  <h4 className="text-[11px] font-bold text-white leading-tight">Stay Safer Everyday</h4>
-                  <p className="text-[9.5px] text-gray-400 mt-0.5 leading-snug">Useful tips for using phones and the internet safely</p>
+                <div className="min-w-0">
+                  <h4 className="text-[11.5px] font-bold text-white leading-tight truncate">Stay Safer Everyday</h4>
+                  <p className="text-[10px] text-gray-400 mt-0.5 leading-snug line-clamp-1">Useful tips for using phones safely</p>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Right Column: "Create a Simulation" Card matching Image */}
-          <div className="lg:col-span-6 bg-[#0c121e] border border-gray-800/80 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3">
+          <div className="lg:col-span-6 bg-[#0c121e] border border-gray-800/80 rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col justify-between space-y-3">
             <div>
               <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
                 Create a Simulation
@@ -855,22 +857,25 @@ export default function Home({
         </div>
 
         {/* Bottom Section: "Try These Example Scenarios" matching Image */}
-        <section className="space-y-2 pt-2 border-t border-gray-900/90 shrink-0">
+        <section className="space-y-3 pt-3 border-t border-gray-800/80 shrink-0">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs sm:text-sm font-bold text-white tracking-tight">
-              Try These Example Scenarios
-            </h3>
-            <span className="text-[10px] text-gray-500">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+              <h3 className="text-xs sm:text-sm font-bold text-white tracking-tight">
+                Try These Example Scenarios
+              </h3>
+            </div>
+            <span className="text-[10px] sm:text-[11px] text-gray-400">
               Click to load preset
             </span>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {/* Card 1: University Phishing Email */}
             <button
               type="button"
               onClick={() => handleApplyPreset(PRESETS[0])}
-              className="text-left p-3 rounded-xl bg-[#0c121e] hover:bg-[#111928] border border-gray-800/80 hover:border-blue-500/50 transition-all flex flex-col justify-between gap-2.5 group cursor-pointer"
+              className="text-left p-3.5 rounded-xl bg-[#0c121e] hover:bg-[#111928] border border-gray-800/80 hover:border-blue-500/50 transition-all flex flex-col justify-between gap-3 group cursor-pointer shadow-sm"
             >
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -885,12 +890,12 @@ export default function Home({
                   <h4 className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors">
                     University Phishing Email
                   </h4>
-                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1 leading-snug">
+                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
                     A message claiming you won a prize and asking you to click a link.
                   </p>
                 </div>
               </div>
-              <div className="pt-1 text-blue-400 group-hover:translate-x-1 transition-transform">
+              <div className="mt-auto pt-1 text-blue-400 group-hover:translate-x-1 transition-transform">
                 <ArrowRight className="w-3.5 h-3.5" />
               </div>
             </button>
@@ -899,7 +904,7 @@ export default function Home({
             <button
               type="button"
               onClick={() => handleApplyPreset(PRESETS[1])}
-              className="text-left p-3 rounded-xl bg-[#0c121e] hover:bg-[#111928] border border-gray-800/80 hover:border-emerald-500/50 transition-all flex flex-col justify-between gap-2.5 group cursor-pointer"
+              className="text-left p-3.5 rounded-xl bg-[#0c121e] hover:bg-[#111928] border border-gray-800/80 hover:border-emerald-500/50 transition-all flex flex-col justify-between gap-3 group cursor-pointer shadow-sm"
             >
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -914,12 +919,12 @@ export default function Home({
                   <h4 className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors">
                     Helpdesk Chat Impersonation
                   </h4>
-                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1 leading-snug">
+                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
                     A fake support agent asking for your account details.
                   </p>
                 </div>
               </div>
-              <div className="pt-1 text-emerald-400 group-hover:translate-x-1 transition-transform">
+              <div className="mt-auto pt-1 text-emerald-400 group-hover:translate-x-1 transition-transform">
                 <ArrowRight className="w-3.5 h-3.5" />
               </div>
             </button>
@@ -928,7 +933,7 @@ export default function Home({
             <button
               type="button"
               onClick={() => handleApplyPreset(PRESETS[2])}
-              className="text-left p-3 rounded-xl bg-[#0c121e] hover:bg-[#111928] border border-gray-800/80 hover:border-red-500/50 transition-all flex flex-col justify-between gap-2.5 group cursor-pointer"
+              className="text-left p-3.5 rounded-xl bg-[#0c121e] hover:bg-[#111928] border border-gray-800/80 hover:border-red-500/50 transition-all flex flex-col justify-between gap-3 group cursor-pointer shadow-sm"
             >
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -943,12 +948,12 @@ export default function Home({
                   <h4 className="text-xs font-bold text-white group-hover:text-red-400 transition-colors">
                     Bank Fraud Alert SMS
                   </h4>
-                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1 leading-snug">
+                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
                     A suspicious SMS from a bank claiming an unauthorized transaction.
                   </p>
                 </div>
               </div>
-              <div className="pt-1 text-red-400 group-hover:translate-x-1 transition-transform">
+              <div className="mt-auto pt-1 text-red-400 group-hover:translate-x-1 transition-transform">
                 <ArrowRight className="w-3.5 h-3.5" />
               </div>
             </button>
@@ -957,7 +962,7 @@ export default function Home({
             <button
               type="button"
               onClick={() => handleApplyPreset(PRESETS[3])}
-              className="text-left p-3 rounded-xl bg-[#0c121e] hover:bg-[#111928] border border-gray-800/80 hover:border-purple-500/50 transition-all flex flex-col justify-between gap-2.5 group cursor-pointer"
+              className="text-left p-3.5 rounded-xl bg-[#0c121e] hover:bg-[#111928] border border-gray-800/80 hover:border-purple-500/50 transition-all flex flex-col justify-between gap-3 group cursor-pointer shadow-sm"
             >
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -972,12 +977,12 @@ export default function Home({
                   <h4 className="text-xs font-bold text-white group-hover:text-purple-400 transition-colors">
                     Single Sign-On Cloned Portal
                   </h4>
-                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1 leading-snug">
+                  <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
                     A cloned website that looks like a real login page.
                   </p>
                 </div>
               </div>
-              <div className="pt-1 text-purple-400 group-hover:translate-x-1 transition-transform">
+              <div className="mt-auto pt-1 text-purple-400 group-hover:translate-x-1 transition-transform">
                 <ArrowRight className="w-3.5 h-3.5" />
               </div>
             </button>
